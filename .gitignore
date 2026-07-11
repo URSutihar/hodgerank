@@ -1,0 +1,21 @@
+# Large data files (download from https://osf.io/f5rn6/)
+data/triplets_large_final_correctednc_correctedorder.csv
+
+# Pre-computed full graph (regenerate with precompute.py)
+output/full_graph.json
+output/full_graph.json.gz
+
+# macOS
+.DS_Store
+
+# Claude Code
+.claude/
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Environment
+.env
+.venv/
