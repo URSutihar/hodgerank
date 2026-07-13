@@ -150,6 +150,66 @@ def compute_s1_star(triangles, edges, edge_idx):
     return s1, frac, rel_res
 
 
+def compute_b3_curl(triangles, tetras):
+    """Build B3 (triangles x tetrahedra) and compute the curl component of s².
+
+    For tetrahedron (a,b,c,d) with a<b<c<d:
+        B3[face(b,c,d), tet] = +1
+        B3[face(a,c,d), tet] = -1
+        B3[face(a,b,d), tet] = +1
+        B3[face(a,b,c), tet] = -1
+
+    s³ = B3^T s²        (score per tetrahedron)
+    s²_curl = B3 (B3^T B3)^{-1} s³   (curl component of s²)
+    curl_frac = ||s²_curl||² / ||s²||²
+    """
+    nT = len(triangles)
+    nTet = len(tetras)
+    if nTet == 0:
+        return np.zeros(0), 0.0
+
+    tri_idx = {(t["i"], t["j"], t["k"]): c for c, t in enumerate(triangles)}
+    s2 = np.array([t["agreement"] for t in triangles], dtype=np.float64)
+
+    b3_rows, b3_cols, b3_vals = [], [], []
+    s3 = np.zeros(nTet, dtype=np.float64)
+
+    for col, tet in enumerate(tetras):
+        a, b, c, d = sorted(tet["nodes"])
+        faces = [((b, c, d), +1), ((a, c, d), -1), ((a, b, d), +1), ((a, b, c), -1)]
+        for face, sign in faces:
+            row = tri_idx.get(face)
+            if row is None:
+                continue
+            b3_rows.append(row)
+            b3_cols.append(col)
+            b3_vals.append(sign)
+            s3[col] += sign * s2[row]
+
+    B3 = csc_matrix((b3_vals, (b3_rows, b3_cols)), shape=(nT, nTet))
+    BtB = (B3.T @ B3).toarray()
+
+    try:
+        curl_coeff = np.linalg.solve(BtB, s3)
+    except np.linalg.LinAlgError:
+        curl_coeff, _, _, _ = np.linalg.lstsq(BtB, s3, rcond=None)
+
+    # ||s²_curl||² — computed row-by-row from the sparse structure (avoids nT-dense alloc)
+    from collections import defaultdict
+    row_contribs = defaultdict(float)
+    for ri, ci, vi in zip(b3_rows, b3_cols, b3_vals):
+        row_contribs[ri] += vi * curl_coeff[ci]
+    norm_curl_sq = sum(v * v for v in row_contribs.values())
+
+    norm_s2_sq = float(np.dot(s2, s2))
+    curl_frac = norm_curl_sq / norm_s2_sq if norm_s2_sq > 0 else 0.0
+
+    for col, tet in enumerate(tetras):
+        tet["s3"] = round(float(s3[col]), 8)
+
+    return s3, curl_frac
+
+
 def find_tetrahedra(triangles):
     """Find all tetrahedra (4-cliques where all 4 triangular faces exist)."""
     tri_set = set()
@@ -220,6 +280,13 @@ def main():
     tetras = find_tetrahedra(triangles)
     print(f"  {len(tetras)} tetrahedra", flush=True)
 
+    print("5b. Computing B3 curl component ...", flush=True)
+    _, curl_frac = compute_b3_curl(triangles, tetras)
+    harmonic_frac = max(0.0, 1.0 - frac - curl_frac)
+    print(f"  gradient R² = {frac*100:.4f}%", flush=True)
+    print(f"  curl R²     = {curl_frac*100:.6f}%", flush=True)
+    print(f"  harmonic R² = {harmonic_frac*100:.6f}%", flush=True)
+
     print("6. Computing 3D layout ...", flush=True)
     positions = spring_layout_3d(nodes, edges)
     for nd in nodes:
@@ -253,6 +320,8 @@ def main():
             "n_judgments": sum(t["total_count"] for t in triangles),
             "frac_explained": round(frac, 6),
             "rel_residual": round(rel_res, 6),
+            "curl_frac": round(curl_frac, 8),
+            "harmonic_frac": round(harmonic_frac, 8),
             "precomputed": True,
         }
     }

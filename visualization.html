@@ -14,10 +14,10 @@
     font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
     background: var(--bg); color: var(--text); }
   #app { display: flex; height: 100vh; }
-  #canvas-wrap { flex: 1; position: relative; background: var(--bg); }
+  #canvas-wrap { flex: 1; min-width: 0; min-height: 0; position: relative; background: var(--bg); overflow: hidden; }
   #graph { width: 100%; height: 100%; }
-  #graph canvas { display: block; }
-  #panel { width: 320px; background: var(--panel); border-right: 1px solid var(--border);
+  #graph canvas { display: block; width: 100% !important; height: 100% !important; }
+  #panel { width: 300px; flex-shrink: 0; background: var(--panel); border-right: 1px solid var(--border);
     padding: 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; }
 
   /* floating AI assistant (bottom-right) */
@@ -101,6 +101,80 @@
     background: linear-gradient(90deg, #7c3aed, #fde047); }
   #loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
     color: var(--text-dim); font-size: 14px; text-align: center; padding: 20px; }
+  #tetraOverlay { display: none; position: absolute; top: 16px; right: 16px; width: 230px;
+    background: rgba(20,23,30,.95); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; font-size: 12px; color: var(--text); z-index: 10; line-height: 1.6;
+    backdrop-filter: blur(6px); }
+  #tetraOverlay .ov-title { font-weight: 700; color: var(--accent); margin-bottom: 6px; font-size: 13px; }
+  #tetraOverlay .ov-section { font-size: 10px; color: var(--text-dim); margin: 8px 0 3px; text-transform: uppercase; letter-spacing: .05em; }
+  #tetraOverlay .t-row { display: flex; justify-content: space-between; gap: 10px; }
+  #tetraOverlay .t-row span:last-child { font-variant-numeric: tabular-nums; color: var(--accent); }
+  #tetraOverlay .ov-hint { font-size: 10px; color: var(--text-dim); margin-top: 8px; line-height: 1.4; border-top: 1px solid var(--border); padding-top: 6px; }
+  #tetraOverlay .ov-close { float: right; cursor: pointer; color: var(--text-dim); font-size: 14px; line-height: 1; margin: -2px -2px 0 0; background: none; border: none; padding: 0; width: auto; }
+
+  /* ── Mobile menu button (hidden on desktop) ─────────────────────────────── */
+  #menuBtn {
+    display: none; position: absolute; top: 12px; left: 12px; z-index: 20;
+    width: auto; padding: 8px 12px; border-radius: 8px; font-size: 20px; line-height: 1;
+    background: rgba(26,29,36,.9); backdrop-filter: blur(6px);
+    border: 1px solid var(--border); color: var(--text); cursor: pointer; }
+  #menuBtn:hover { border-color: var(--accent); }
+
+  /* Panel backdrop (mobile only) */
+  #panel-backdrop {
+    display: none; position: fixed; inset: 0; z-index: 99;
+    background: rgba(0,0,0,.5); backdrop-filter: blur(2px); }
+
+  /* ── Tablet (768–1023 px): narrower sidebar ──────────────────────────────── */
+  @media (max-width: 1023px) and (min-width: 768px) {
+    #panel { width: 240px; padding: 14px; gap: 12px; }
+  }
+
+  /* ── Mobile (≤ 767 px): bottom-sheet panel ───────────────────────────────── */
+  @media (max-width: 767px) {
+    #menuBtn { display: block; }
+
+    #panel {
+      position: fixed; left: 0; right: 0; bottom: 0; top: auto;
+      width: 100%; max-height: 80vh; border-right: none;
+      border-top: 1px solid var(--border); border-radius: 20px 20px 0 0;
+      padding: 0 16px 24px; gap: 14px;
+      overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+      transform: translateY(100%);
+      transition: transform .3s cubic-bezier(.4,0,.2,1);
+      z-index: 100;
+    }
+    #panel::before {
+      content: ''; display: block; width: 40px; height: 4px;
+      background: var(--border); border-radius: 2px;
+      margin: 12px auto 14px; flex-shrink: 0; }
+    #panel.open { transform: translateY(0); }
+    #panel-backdrop.open { display: block; }
+
+    /* Collapsible .group sections on mobile */
+    .group h2 { cursor: pointer; user-select: none; margin-bottom: 0;
+      display: flex; align-items: center; justify-content: space-between; padding: 2px 0; }
+    .group h2::after { content: '▾'; font-size: 11px; color: var(--text-dim); flex-shrink: 0; }
+    .group.collapsed h2::after { content: '▸'; }
+    .group.collapsed > *:not(h2) { display: none !important; }
+    /* restore margin on h2 when open */
+    .group:not(.collapsed) h2 { margin-bottom: 10px; }
+    /* prevent long text overflowing its box */
+    .group .hint, .group #stats, .group #dataStatus, .group #d2Status,
+    .group label, .group .row label { overflow-wrap: break-word; word-break: break-word; }
+
+    /* tetraOverlay: full-width strip at top on mobile */
+    #tetraOverlay {
+      top: 12px !important; right: 8px !important;
+      left: 8px !important; width: auto !important; bottom: auto; }
+
+    /* AI widget full-width on mobile */
+    #aiwidget { right: 8px; left: 8px; bottom: 8px; width: auto; height: 68vh; }
+    #aiToggle { right: 12px; bottom: 12px; }
+
+    /* tooltip: keep within screen on mobile */
+    #tooltip { max-width: calc(100vw - 32px); }
+  }
 </style>
 
 <script type="importmap">
@@ -133,6 +207,11 @@
 
     <div class="group"><h2>Dataset</h2><div id="stats">…</div></div>
 
+    <div class="group" id="tetraInfoBox" style="display:none">
+      <h2>Isolated Tetrahedron</h2>
+      <div id="tetraInfoContent"></div>
+    </div>
+
     <div class="group">
       <h2>Filters</h2>
       <div class="row"><label>Min agreement</label><span class="val" id="agrVal">0.00</span></div>
@@ -156,6 +235,7 @@
       <label class="toggle" style="margin-top:8px"><input type="checkbox" id="showEdges" checked> Edges</label>
       <label class="toggle" style="margin-top:8px"><input type="checkbox" id="showTetra"> Tetrahedra (3-simplices)</label>
       <label class="toggle" style="margin-top:8px"><input type="checkbox" id="onlyShared"> Only shared-<i>edge</i> pairs (curl sites)</label>
+      <label class="toggle" style="margin-top:8px"><input type="checkbox" id="showExtremes"> Highlight agreement extremes (top/bottom 10%)</label>
     </div>
 
     <div class="group">
@@ -201,12 +281,15 @@
   </aside>
 
   <div id="canvas-wrap">
+    <button id="menuBtn" aria-label="Open panel">☰</button>
     <div id="graph"></div>
     <div id="tooltip"></div>
     <div id="loading">Loading 3D engine &amp; data …</div>
+    <div id="tetraOverlay"></div>
   </div>
 
 </div>
+<div id="panel-backdrop"></div>
 
 <!-- floating AI assistant (bottom-right) -->
 <button id="aiToggle" title="Ask the data">Ask the data</button>
@@ -556,6 +639,20 @@ function computeTetrahedra(){
     ];
     return { nodes: [a,b,c,d], faces, key };
   });
+}
+
+// Compute s³ per tetrahedron: signed sum of 4 face agreement scores via B₃ᵀ s²
+// For tet (a<b<c<d): s³ = +ag(b,c,d) - ag(a,c,d) + ag(a,b,d) - ag(a,b,c)
+function computeS3(){
+  if (!data || !data.tetrahedra || !data.tetrahedra.length) return;
+  const triMap = new Map();
+  data.triangles.forEach(t => triMap.set(t.i+"_"+t.j+"_"+t.k, t));
+  const ag = (a,b,c) => { const t = triMap.get([a,b,c].sort((x,y)=>x-y).join("_")); return t ? t.agreement : 0; };
+  for (const tet of data.tetrahedra){
+    if (tet.s3 !== undefined) continue;
+    const [a,b,c,d] = tet.nodes.slice().sort((x,y)=>x-y);
+    tet.s3 = +ag(b,c,d) - ag(a,c,d) + ag(a,b,d) - ag(a,b,c);
+  }
 }
 
 // ===========================================================================
@@ -1125,23 +1222,33 @@ let animateStarted = false;
 
 function initThree(){
   if (scene) return;
-  const el = $("graph"), w = el.clientWidth, h = el.clientHeight;
+  const el = $("graph"), wrap = $("canvas-wrap");
+  const w = wrap.clientWidth || window.innerWidth, h = wrap.clientHeight || window.innerHeight;
   scene = new THREE.Scene(); scene.background = new THREE.Color(0x0f1115);
-  camera = new THREE.PerspectiveCamera(60, w/h, 0.5, 500000);
+  camera = new THREE.PerspectiveCamera(60, w / h || 16/9, 0.5, 500000);
   camera.position.set(0, 0, 700);
   renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(window.devicePixelRatio);
-  renderer.setSize(w, h);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(w, h, false);   // false = don't set canvas CSS size; CSS handles that
   el.appendChild(renderer.domElement);
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true; controls.dampingFactor = 0.12;
-  controls.zoomToCursor = true;          // scroll zooms toward the cursor, not (0,0,0)
-  controls.screenSpacePanning = true;    // right-drag pans in screen space
+  controls.zoomToCursor = true;
+  controls.screenSpacePanning = true;
   raycaster = new THREE.Raycaster();
-  window.addEventListener("resize", () => {
-    const w = el.clientWidth, h = el.clientHeight;
-    camera.aspect = w/h; camera.updateProjectionMatrix(); renderer.setSize(w, h);
+
+  // Observe the wrap (not #graph) so the canvas's own CSS size doesn't interfere
+  let _fitPending = false;
+  const ro = new ResizeObserver(entries => {
+    const e = entries[0]; if (!e) return;
+    const w = e.contentRect.width, h = e.contentRect.height;
+    if (w === 0 || h === 0) return;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h; camera.updateProjectionMatrix();
+    if (!_fitPending){ _fitPending = true; requestAnimationFrame(() => { _fitPending = false; if (data) fitView(); }); }
   });
+  ro.observe(wrap);
+
   renderer.domElement.addEventListener("mousemove", onHover);
   renderer.domElement.addEventListener("dblclick", onDblClick);
 }
@@ -1179,8 +1286,10 @@ function setData(raw){
     data.edges.forEach(e => { maxAbs = Math.max(maxAbs, Math.abs(e.s1_star || 0)); });
     data._s1Max = maxAbs;
     $("s1").max = Math.ceil(maxAbs * 1000) / 1000;
+    computeS3();
   } else {
     computeTetrahedra();
+    computeS3();
     computeS1Star();
   }
 
@@ -1212,10 +1321,16 @@ function buildStats(){
     ? `<b>${data.triangles.length.toLocaleString()}</b> of <b>${m.distinct.toLocaleString()}</b> triangles <span class="ai-note">(capped)</span>`
     : `<b>${data.triangles.length.toLocaleString()}</b> triangles`;
   const nTet = (data.tetrahedra || []).length;
+  const meta = data.meta || {};
+  const gradLine = meta.frac_explained
+    ? `<br>Gradient R² <b>${(meta.frac_explained*100).toFixed(2)}%</b>`
+      + (meta.curl_frac !== undefined ? ` · Curl R² <b>${(meta.curl_frac*100).toFixed(4)}%</b>` : "")
+      + (meta.harmonic_frac !== undefined ? ` · Harmonic <b>${(meta.harmonic_frac*100).toFixed(4)}%</b>` : "")
+    : "";
   $("stats").innerHTML = `<b>${data.nodes.length.toLocaleString()}</b> nodes · <b>${data.edges.length.toLocaleString()}</b> edges · ${triLine}<br>
     Shared edges: <b>${data.edges.filter(e=>e.shared).length}</b> · Tetrahedra: <b>${nTet}</b><br>
     Odd: <b>${c.consistently_odd||0}</b> · Similar: <b>${c.consistently_similar||0}</b><br>
-    Context-dep: <b>${c.context_dependent||0}</b> · Mixed: <b>${c.mixed||0}</b>`;
+    Context-dep: <b>${c.context_dependent||0}</b> · Mixed: <b>${c.mixed||0}</b>${gradLine}`;
 }
 
 // ---- force layout runs in a Web Worker (off the main/render thread) ----
@@ -1314,6 +1429,7 @@ function buildMeshes(){
 
 // ----- filters (incorporate highlight + solo) -----
 let tetraNodes = new Set(), tetraEdgeKeys = new Set(), tetraTriKeys = new Set();
+let extremesLow = -Infinity, extremesHigh = Infinity; // thresholds for middle-hiding
 function buildTetraSets(){
   tetraNodes.clear(); tetraEdgeKeys.clear(); tetraTriKeys.clear();
   for (const tet of (data.tetrahedra || [])){
@@ -1362,6 +1478,7 @@ function triHidden(t){
   if (!$("showTri").checked) return true;
   if (soloTri) return t !== soloTri;
   if (t.agreement < +$("agr").value) return true;
+  if ($("showExtremes").checked && t.agreement > extremesLow && t.agreement < extremesHigh) return true;
   if ($("onlyShared").checked && !t.inShared) return true;
   const mt = +$("mt").value;
   if (mt > 1 && Math.max(t.vi.n_triangles, t.vj.n_triangles, t.vk.n_triangles) < mt) return true;
@@ -1381,6 +1498,13 @@ function leaveTetraMode(){
 }
 
 function rebuild(){
+  // compute extremes thresholds (top/bottom 10% of agreement scores)
+  if ($("showExtremes").checked && data && data.triangles.length){
+    const sorted = data.triangles.map(t => t.agreement).sort((a,b) => a-b);
+    const cut = Math.max(1, Math.floor(sorted.length * 0.1));
+    extremesLow = sorted[cut - 1];
+    extremesHigh = sorted[sorted.length - cut];
+  }
   if ($("showTetra").checked){
     buildTetraSets();
     if (!savedRadii) enterTetraMode();
@@ -1512,22 +1636,48 @@ function onHover(ev){
   const rect = renderer.domElement.getBoundingClientRect();
   const m = new THREE.Vector2(((ev.clientX-rect.left)/rect.width)*2-1, -((ev.clientY-rect.top)/rect.height)*2+1);
   raycaster.setFromCamera(m, camera);
-  const nh = raycaster.intersectObject(pickMesh);
+  const tetraMode = $("showTetra").checked || !!soloTetra;
   let html = null;
-  if (nh.length){ const n = data.nodes[nh[0].instanceId];
-    if (!n._hidden) html = `<div class="t-title">Node ${n.id}</div>
-      <div class="t-row"><span>Category</span><span>${n.category.replace(/_/g,' ')}</span></div>
-      <div class="t-row"><span>Mean oddness</span><span>${n.mean_oddness.toFixed(3)}</span></div>
-      <div class="t-row"><span>Oddness var</span><span>${n.var_oddness.toFixed(3)}</span></div>
-      <div class="t-row"><span>Triangles</span><span>${n.n_triangles}</span></div>`; }
+  if (!tetraMode){
+    const nh = raycaster.intersectObject(pickMesh);
+    if (nh.length){ const n = data.nodes[nh[0].instanceId];
+      if (!n._hidden) html = `<div class="t-title">Node ${n.id}</div>
+        <div class="t-row"><span>Category</span><span>${n.category.replace(/_/g,' ')}</span></div>
+        <div class="t-row"><span>Mean oddness</span><span>${n.mean_oddness.toFixed(3)}</span></div>
+        <div class="t-row"><span>Oddness var</span><span>${n.var_oddness.toFixed(3)}</span></div>
+        <div class="t-row"><span>Triangles</span><span>${n.n_triangles}</span></div>`; }
+  }
   if (!html){ const th = raycaster.intersectObject(triMesh);
     if (th.length){ const t = visTris[Math.floor(th[0].faceIndex)];
-      if (t) html = `<div class="t-title">Triangle (${t.i}, ${t.j}, ${t.k})</div>
-        <div class="t-row"><span>P(${t.i} odd)</span><span>${t.p_i.toFixed(3)}</span></div>
-        <div class="t-row"><span>P(${t.j} odd)</span><span>${t.p_j.toFixed(3)}</span></div>
-        <div class="t-row"><span>P(${t.k} odd)</span><span>${t.p_k.toFixed(3)}</span></div>
-        <div class="t-row"><span>Agreement</span><span>${t.agreement.toFixed(3)}</span></div>
-        <div class="t-row"><span>Judgments</span><span>${t.total_count}</span></div>`; } }
+      if (t){
+        if ($("showTetra").checked || soloTetra){
+          const key = [t.i,t.j,t.k].sort((a,b)=>a-b);
+          const tet = (data.tetrahedra||[]).find(te => {
+            const ns = te.nodes.slice().sort((a,b)=>a-b);
+            for (let skip=0;skip<4;skip++){
+              const f = ns.filter((_,i)=>i!==skip);
+              if (f[0]===key[0]&&f[1]===key[1]&&f[2]===key[2]) return true;
+            }
+            return false;
+          });
+          if (tet){
+            const ns = tet.nodes.slice().sort((a,b)=>a-b);
+            const s3v = tet.s3 !== undefined ? tet.s3.toFixed(4) : "—";
+            html = `<div class="t-title">Tetrahedron (${ns.join(",")})</div>
+              <div class="t-row"><span>s³ curl score</span><span>${s3v}</span></div>
+              <div style="font-size:10px;color:var(--text-dim);margin-top:4px">Double-click to isolate</div>`;
+          }
+        } else {
+          html = `<div class="t-title">Triangle (${t.i}, ${t.j}, ${t.k})</div>
+            <div class="t-row"><span>P(${t.i} odd)</span><span>${t.p_i.toFixed(3)}</span></div>
+            <div class="t-row"><span>P(${t.j} odd)</span><span>${t.p_j.toFixed(3)}</span></div>
+            <div class="t-row"><span>P(${t.k} odd)</span><span>${t.p_k.toFixed(3)}</span></div>
+            <div class="t-row"><span>Agreement</span><span>${t.agreement.toFixed(3)}</span></div>
+            <div class="t-row"><span>Judgments</span><span>${t.total_count}</span></div>`;
+        }
+      }
+    }
+  }
   if (html){ tooltip.innerHTML = html;
     const wrap = $("canvas-wrap").getBoundingClientRect();
     let x = ev.clientX-wrap.left+14, y = ev.clientY-wrap.top+14;
@@ -1540,8 +1690,11 @@ function onDblClick(ev){
   const rect = renderer.domElement.getBoundingClientRect();
   const m = new THREE.Vector2(((ev.clientX-rect.left)/rect.width)*2-1, -((ev.clientY-rect.top)/rect.height)*2+1);
   raycaster.setFromCamera(m, camera);
-  const nh = raycaster.intersectObject(pickMesh);
-  if (nh.length){ const n = data.nodes[nh[0].instanceId]; if (!n._hidden){ soloTri = null; highlightNode(n.id); flyTo(n); return; } }
+  const tetraMode = $("showTetra").checked || !!soloTetra;
+  if (!tetraMode){
+    const nh = raycaster.intersectObject(pickMesh);
+    if (nh.length){ const n = data.nodes[nh[0].instanceId]; if (!n._hidden){ soloTri = null; highlightNode(n.id); flyTo(n); return; } }
+  }
   const th = raycaster.intersectObject(triMesh);
   if (th.length){
     const t = visTris[Math.floor(th[0].faceIndex)];
@@ -1604,8 +1757,37 @@ function soloTetrahedron(tet){
   let dir = camera.position.clone().sub(controls.target).normalize();
   if (!isFinite(dir.x) || dir.lengthSq() === 0) dir = new THREE.Vector3(0,0,1);
   controls.target.copy(center); camera.position.copy(center).addScaledVector(dir, dist);
+
+  // populate top-right overlay
+  const [a,b,c,d] = ns;
+  const triMap = new Map(); data.triangles.forEach(t => triMap.set(t.i+"_"+t.j+"_"+t.k, t));
+  const faceRows = [
+    [[b,c,d], +1], [[a,c,d], -1], [[a,b,d], +1], [[a,b,c], -1]
+  ].map(([f, sign]) => {
+    const t = triMap.get(f.join("_"));
+    const ag = t ? t.agreement.toFixed(3) : "—";
+    return `<div class="t-row"><span>${sign>0?"+":"−"}(${f.join(",")})</span><span>${ag}</span></div>`;
+  }).join("");
+  const s3v = tet.s3 !== undefined ? tet.s3.toFixed(4) : "—";
+  const meta = (data.meta || {});
+  const decompRows = meta.frac_explained !== undefined
+    ? `<div class="ov-section">Hodge decomposition (full dataset)</div>
+       <div class="t-row"><span>Gradient R²</span><span>${(meta.frac_explained*100).toFixed(2)}%</span></div>
+       <div class="t-row"><span>Curl R²</span><span>${((meta.curl_frac||0)*100).toFixed(4)}%</span></div>
+       <div class="t-row"><span>Harmonic R²</span><span>${((meta.harmonic_frac||0)*100).toFixed(4)}%</span></div>`
+    : "";
+  $("tetraOverlay").innerHTML = `
+    <button class="ov-close" onclick="clearHighlight()">✕</button>
+    <div class="ov-title">Tetrahedron (${ns.join(", ")})</div>
+    <div class="ov-section">Face agreements (signed)</div>
+    ${faceRows}
+    <div class="ov-section">Curl score</div>
+    <div class="t-row"><span>s³</span><span>${s3v}</span></div>
+    ${decompRows}
+    <div class="ov-hint">|s³| ≈ 0 → balanced faces, no net curl.<br>Large |s³| → agreement cycles around this tetrahedron.</div>`;
+  $("tetraOverlay").style.display = "block";
 }
-function clearHighlight(){ highlightedId=null; soloTri=null; soloTetra=null; neighborNodes.clear(); incidentTris.clear(); soloTetraNodes.clear(); soloTetraEdgeKeys.clear(); soloTetraTriKeys.clear(); rebuild(); }
+function clearHighlight(){ highlightedId=null; soloTri=null; soloTetra=null; neighborNodes.clear(); incidentTris.clear(); soloTetraNodes.clear(); soloTetraEdgeKeys.clear(); soloTetraTriKeys.clear(); $("tetraOverlay").style.display="none"; rebuild(); }
 function flyTo(n){
   controls.target.set(n.x, n.y, n.z);
   let dir = new THREE.Vector3(n.x, n.y, n.z).normalize(); if (dir.lengthSq()===0) dir.set(0,0,1);
@@ -1630,7 +1812,7 @@ function bindControls(){
   };
   bind("agr","agrVal"); bind("odd","oddVal"); bind("sim","simVal"); bind("s1","s1Val",v=>(+v).toFixed(3)); bind("mt","mtVal",v=>v);
   bind("charge","chargeVal",v=>v); bind("link","linkVal",v=>v);
-  ["showTri","showEdges","showTetra","onlyShared"].forEach(id=>$(id).addEventListener("change",()=>onChange(id)));
+  ["showTri","showEdges","showTetra","onlyShared","showExtremes"].forEach(id=>$(id).addEventListener("change",()=>onChange(id)));
   $("findNode").addEventListener("keydown", e=>{ if(e.key==="Enter"){ const id=parseInt(e.target.value,10); if(nodeById && nodeById.has(id)){ highlightNode(id); flyTo(nodeById.get(id)); } } });
   $("clearFind").addEventListener("click", clearHighlight);
   $("restart").addEventListener("click", ()=>reheat(0.8));
@@ -1638,6 +1820,38 @@ function bindControls(){
   $("fileInput").addEventListener("change", onFile);
   $("loadFull").addEventListener("click", loadFullDataset);
   $("downloadD2").addEventListener("click", generateD2);
+
+  // Mobile: bottom-sheet panel toggle
+  const panel = $("panel"), backdrop = $("panel-backdrop");
+  const openPanel  = () => { panel.classList.add("open");    backdrop.classList.add("open");    };
+  const closePanel = () => { panel.classList.remove("open"); backdrop.classList.remove("open"); };
+  $("menuBtn").addEventListener("click", () => panel.classList.contains("open") ? closePanel() : openPanel());
+  backdrop.addEventListener("click", closePanel);
+
+  // Mobile: collapsible .group sections
+  const mq = window.matchMedia("(max-width: 767px)");
+
+  function setupCollapsible(isMobile) {
+    document.querySelectorAll(".group").forEach(g => {
+      const h2 = g.querySelector("h2");
+      if (!h2) return;
+      // attach click listener only once
+      if (!g._collapseListenerAdded) {
+        h2.addEventListener("click", () => { if (window.matchMedia("(max-width: 767px)").matches) g.classList.toggle("collapsed"); });
+        g._collapseListenerAdded = true;
+      }
+      if (isMobile) {
+        const t = h2.textContent.trim().toLowerCase();
+        if (!["data", "dataset", "filters"].includes(t)) g.classList.add("collapsed");
+      } else {
+        g.classList.remove("collapsed");
+      }
+    });
+  }
+
+  setupCollapsible(mq.matches);
+  mq.addEventListener("change", e => setupCollapsible(e.matches));
+
   // R = recenter (keep zoom), F = fit whole layout to view (ignored while typing)
   window.addEventListener("keydown", e => {
     if (document.activeElement && document.activeElement.tagName === "INPUT") return;
@@ -1678,10 +1892,11 @@ function loadFullDataset(){
         setData(raw);
         animateStarted || animate();
         const m = raw.meta || {};
+        const curlStr = m.curl_frac !== undefined ? ` · curl ${(m.curl_frac*100).toFixed(4)}% · harmonic ${((m.harmonic_frac||0)*100).toFixed(4)}%` : "";
         $("dataStatus").innerHTML = `Loaded <b>full THINGS dataset</b> — `
           + `${raw.triangles.length.toLocaleString()} triangles, ${raw.nodes.length.toLocaleString()} nodes, `
           + `${raw.edges.length.toLocaleString()} edges, ${(raw.tetrahedra||[]).length} tetrahedra. `
-          + `R² = ${((m.frac_explained||0)*100).toFixed(4)}%`;
+          + `Gradient R² = ${((m.frac_explained||0)*100).toFixed(4)}%${curlStr}`;
       }, 50);
     })
     .catch(() => {

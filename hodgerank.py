@@ -343,6 +343,66 @@ def export_json(df, node_ids, edge_list, similarity, node_stats, path=JSON_OUT):
 
 
 # ---------------------------------------------------------------------------
+# Step 6: B3 boundary operator and curl component
+# ---------------------------------------------------------------------------
+def _find_tetrahedra(triangles):
+    """Find all tetrahedra (4-cliques with all 4 triangular faces present)."""
+    from itertools import combinations
+    tri_set = {(t["i"], t["j"], t["k"]) for t in triangles}
+    edge_nodes = {}
+    for t in triangles:
+        for a, b, c in [(t["i"], t["j"], t["k"]),
+                        (t["i"], t["k"], t["j"]),
+                        (t["j"], t["k"], t["i"])]:
+            edge_nodes.setdefault((a, b), set()).add(c)
+    tet_set = set()
+    for t in triangles:
+        a, b, c = t["i"], t["j"], t["k"]
+        for d in edge_nodes.get((a, b), set()):
+            if d in (a, b, c):
+                continue
+            if d not in edge_nodes.get((a, c), set()) or d not in edge_nodes.get((b, c), set()):
+                continue
+            q = tuple(sorted([a, b, c, d]))
+            if all(tuple(sorted(f)) in tri_set for f in combinations(q, 3)):
+                tet_set.add(q)
+    return [{"nodes": list(q)} for q in sorted(tet_set)]
+
+
+def _compute_b3_curl(triangles, tetras):
+    """Compute s³ per tetrahedron and curl fraction of the Hodge decomposition."""
+    from collections import defaultdict
+    nT = len(triangles)
+    nTet = len(tetras)
+    tri_idx = {(t["i"], t["j"], t["k"]): c for c, t in enumerate(triangles)}
+    s2 = np.array([t["agreement"] for t in triangles], dtype=np.float64)
+    b3_rows, b3_cols, b3_vals = [], [], []
+    s3 = np.zeros(nTet)
+    for col, tet in enumerate(tetras):
+        a, b, c, d = sorted(tet["nodes"])
+        for face, sign in [((b, c, d), +1), ((a, c, d), -1), ((a, b, d), +1), ((a, b, c), -1)]:
+            row = tri_idx.get(face)
+            if row is None:
+                continue
+            b3_rows.append(row); b3_cols.append(col); b3_vals.append(sign)
+            s3[col] += sign * s2[row]
+    B3 = csc_matrix((b3_vals, (b3_rows, b3_cols)), shape=(nT, nTet))
+    BtB = (B3.T @ B3).toarray()
+    try:
+        curl_coeff = np.linalg.solve(BtB, s3)
+    except np.linalg.LinAlgError:
+        curl_coeff, _, _, _ = np.linalg.lstsq(BtB, s3, rcond=None)
+    row_contribs = defaultdict(float)
+    for ri, ci, vi in zip(b3_rows, b3_cols, b3_vals):
+        row_contribs[ri] += vi * curl_coeff[ci]
+    norm_curl_sq = sum(v * v for v in row_contribs.values())
+    norm_s2_sq = float(np.dot(s2, s2))
+    for col, tet in enumerate(tetras):
+        tet["s3"] = round(float(s3[col]), 8)
+    return s3, (norm_curl_sq / norm_s2_sq if norm_s2_sq > 0 else 0.0)
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def main():
@@ -403,6 +463,21 @@ def main():
     print(f"  wrote {JSON_OUT} "
           f"({len(payload['nodes'])} nodes, {len(payload['edges'])} edges, "
           f"{len(payload['triangles'])} triangles)")
+
+    print("Computing B3 curl component ...")
+    tris_for_b3 = [{"i": int(r.i), "j": int(r.j), "k": int(r.k),
+                    "agreement": float(r.agreement_score)} for _, r in df.iterrows()]
+    tetras_for_b3 = _find_tetrahedra(tris_for_b3)
+    print(f"  {len(tetras_for_b3)} tetrahedra found")
+    if tetras_for_b3:
+        _, curl_frac = _compute_b3_curl(tris_for_b3, tetras_for_b3)
+        harmonic_frac = max(0.0, 1.0 - frac - curl_frac)
+        print(f"  gradient R² = {frac*100:.4f}%")
+        print(f"  curl R²     = {curl_frac*100:.6f}%")
+        print(f"  harmonic R² = {harmonic_frac*100:.6f}%")
+    else:
+        print("  no tetrahedra — curl R² = 0%, harmonic R² = "
+              f"{(1.0-frac)*100:.4f}%")
 
     print("Done.")
 
