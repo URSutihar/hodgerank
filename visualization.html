@@ -112,6 +112,30 @@
   #tetraOverlay .ov-hint { font-size: 10px; color: var(--text-dim); margin-top: 8px; line-height: 1.4; border-top: 1px solid var(--border); padding-top: 6px; }
   #tetraOverlay .ov-close { float: right; cursor: pointer; color: var(--text-dim); font-size: 14px; line-height: 1; margin: -2px -2px 0 0; background: none; border: none; padding: 0; width: auto; }
 
+  /* ── Concept image strip (shown when triangle/tetrahedron isolated) ──────── */
+  #conceptImages {
+    display: none; position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+    flex-direction: row; gap: 10px; z-index: 10; pointer-events: none;
+    max-width: calc(100% - 32px); overflow-x: auto;
+  }
+  .ci-card {
+    display: flex; flex-direction: column; align-items: center; gap: 5px;
+    background: rgba(20,23,30,.90); border: 1px solid var(--border); border-radius: 10px;
+    padding: 8px; backdrop-filter: blur(6px); flex-shrink: 0;
+  }
+  .ci-card img {
+    width: 90px; height: 90px; object-fit: cover; border-radius: 6px;
+    background: var(--border);
+  }
+  .ci-card .ci-label { font-size: 11px; color: var(--text); text-align: center; max-width: 90px; }
+  .ci-card .ci-odd  { font-size: 10px; color: #f87171; font-weight: 600; }
+  .ci-card .ci-even { font-size: 10px; color: var(--text-dim); }
+  @media (max-width: 767px) {
+    #conceptImages { bottom: 8px; gap: 6px; }
+    .ci-card img { width: 72px; height: 72px; }
+    .ci-card { padding: 6px; }
+  }
+
   /* ── Mobile menu button (hidden on desktop) ─────────────────────────────── */
   #menuBtn {
     display: none; position: absolute; top: 12px; left: 12px; z-index: 20;
@@ -286,6 +310,7 @@
     <div id="tooltip"></div>
     <div id="loading">Loading 3D engine &amp; data …</div>
     <div id="tetraOverlay"></div>
+    <div id="conceptImages"></div>
   </div>
 
 </div>
@@ -329,7 +354,7 @@
 
 <script type="module">
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TrackballControls } from 'three/addons/controls/TrackballControls.js';
 // the force simulation runs in a Web Worker (see WORKER_SRC) to keep the UI smooth
 
 const CAT_COLORS = {
@@ -349,6 +374,7 @@ function agrRgb(t){
 const tooltip = document.getElementById("tooltip");
 const $ = id => document.getElementById(id);
 let data, nodeById, scene, camera, renderer, controls, raycaster;
+let thingsConcepts = null; // loaded from data/things_concepts.json when available
 let worker = null, positionsDirty = false, pendingFit = false;   // Web Worker force layout
 let nodeMesh, pickMesh, edgeMesh, edgeGeom, triMesh, triGeom, tetraMesh, tetraGeom;
 let visEdges = [], visTris = [];
@@ -1213,6 +1239,7 @@ function eidOf(x){ return (x && typeof x==="object") ? x.id : x; }
 initThree();
 bindControls();
 initChat();
+fetch("data/things_concepts.json").then(r => r.json()).then(c => { thingsConcepts = c; }).catch(() => {});
 fetch("output/data.json")
   .then(r => r.json())
   .then(raw => { $("loading").remove(); setData(raw); animate(); })
@@ -1231,10 +1258,13 @@ function initThree(){
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(w, h, false);   // false = don't set canvas CSS size; CSS handles that
   el.appendChild(renderer.domElement);
-  controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true; controls.dampingFactor = 0.12;
-  controls.zoomToCursor = true;
-  controls.screenSpacePanning = true;
+  controls = new TrackballControls(camera, renderer.domElement);
+  controls.rotateSpeed = 2.0;
+  controls.zoomSpeed = 1.2;
+  controls.panSpeed = 0.8;
+  controls.dynamicDampingFactor = 0.12;
+  controls.noZoom = false;
+  controls.noPan = false;
   raycaster = new THREE.Raycaster();
 
   // Observe the wrap (not #graph) so the canvas's own CSS size doesn't interfere
@@ -1245,6 +1275,7 @@ function initThree(){
     if (w === 0 || h === 0) return;
     renderer.setSize(w, h, false);
     camera.aspect = w / h; camera.updateProjectionMatrix();
+    if (controls) controls.handleResize();
     if (!_fitPending){ _fitPending = true; requestAnimationFrame(() => { _fitPending = false; if (data) fitView(); }); }
   });
   ro.observe(wrap);
@@ -1768,6 +1799,9 @@ function soloTriangle(t){
   let dir = camera.position.clone().sub(controls.target).normalize();
   if (!isFinite(dir.x) || dir.lengthSq() === 0) dir = new THREE.Vector3(0,0,1);
   controls.target.copy(c); camera.position.copy(c).addScaledVector(dir, dist);
+  // label for which node is the odd one out
+  const oddNode = t.p_i === 1 ? t.i : t.p_j === 1 ? t.j : t.p_k === 1 ? t.k : null;
+  showConceptImages([t.i, t.j, t.k], oddNode !== null ? new Set([oddNode]) : new Set());
 }
 function soloTetrahedron(tet){
   soloTetra = tet; soloTri = null; highlightedId = null;
@@ -1820,8 +1854,29 @@ function soloTetrahedron(tet){
     ${decompRows}
     <div class="ov-hint">|s³| ≈ 0 → balanced faces, no net curl.<br>Large |s³| → agreement cycles around this tetrahedron.</div>`;
   $("tetraOverlay").style.display = "block";
+  showConceptImages(ns, new Set());
 }
-function clearHighlight(){ highlightedId=null; soloTri=null; soloTetra=null; neighborNodes.clear(); incidentTris.clear(); soloTetraNodes.clear(); soloTetraEdgeKeys.clear(); soloTetraTriKeys.clear(); $("tetraOverlay").style.display="none"; rebuild(); }
+function clearHighlight(){ highlightedId=null; soloTri=null; soloTetra=null; neighborNodes.clear(); incidentTris.clear(); soloTetraNodes.clear(); soloTetraEdgeKeys.clear(); soloTetraTriKeys.clear(); $("tetraOverlay").style.display="none"; $("conceptImages").style.display="none"; rebuild(); }
+
+function showConceptImages(nodeIds, oddSet) {
+  const el = $("conceptImages");
+  if (!thingsConcepts) { el.style.display = "none"; return; }
+  el.innerHTML = "";
+  for (const id of nodeIds) {
+    const c = thingsConcepts[id - 1];
+    if (!c) continue;
+    const isOdd = oddSet.has(id);
+    const card = document.createElement("div");
+    card.className = "ci-card";
+    card.innerHTML =
+      `<img src="images/${c.uid}/${c.uid}_01b.jpg" alt="${c.word}" ` +
+      `onerror="this.style.opacity='.25'">`+
+      `<div class="ci-label">${c.word}</div>` +
+      (isOdd ? `<div class="ci-odd">odd one out</div>` : `<div class="ci-even">similar</div>`);
+    el.appendChild(card);
+  }
+  el.style.display = "flex";
+}
 function flyTo(n){
   controls.target.set(n.x, n.y, n.z);
   let dir = new THREE.Vector3(n.x, n.y, n.z).normalize(); if (dir.lengthSq()===0) dir.set(0,0,1);
