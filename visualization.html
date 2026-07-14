@@ -112,6 +112,19 @@
   #tetraOverlay .ov-hint { font-size: 10px; color: var(--text-dim); margin-top: 8px; line-height: 1.4; border-top: 1px solid var(--border); padding-top: 6px; }
   #tetraOverlay .ov-close { float: right; cursor: pointer; color: var(--text-dim); font-size: 14px; line-height: 1; margin: -2px -2px 0 0; background: none; border: none; padding: 0; width: auto; }
 
+  /* ── Image toggle button (bottom-centre of canvas, shown in isolated view) ── */
+  #imgToggleBtn {
+    position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+    z-index: 10; padding: 7px 14px; border-radius: 20px; font-size: 12px; font-weight: 600;
+    background: rgba(26,29,36,.9); border: 1px solid var(--border); color: var(--text);
+    cursor: pointer; backdrop-filter: blur(6px); white-space: nowrap;
+    transition: background .15s, border-color .15s;
+  }
+  #imgToggleBtn[aria-pressed="true"] {
+    background: var(--accent); border-color: var(--accent); color: #0f1115;
+  }
+  @media (max-width: 767px) { #imgToggleBtn { bottom: 10px; font-size: 11px; padding: 6px 12px; } }
+
   /* ── Concept image cards (CSS2DObjects billboarded at each vertex) ───────── */
   .nlc-card {
     display: flex; flex-direction: column; align-items: center; gap: 4px;
@@ -314,6 +327,7 @@
     <div id="tooltip"></div>
     <div id="loading">Loading 3D engine &amp; data …</div>
     <div id="tetraOverlay"></div>
+    <button id="imgToggleBtn" style="display:none" aria-pressed="false">🖼 Show images</button>
   </div>
 
 </div>
@@ -380,6 +394,7 @@ const $ = id => document.getElementById(id);
 let data, nodeById, scene, camera, renderer, labelRenderer, controls, raycaster;
 let thingsConcepts = null, thingsImages = null;
 let conceptLabels = [];
+let _pendingImgNodeIds = [], _pendingImgOddSet = new Set();
 let worker = null, positionsDirty = false, pendingFit = false;   // Web Worker force layout
 let nodeMesh, pickMesh, edgeMesh, edgeGeom, triMesh, triGeom, tetraMesh, tetraGeom;
 let visEdges = [], visTris = [];
@@ -1814,7 +1829,9 @@ function soloTriangle(t){
   controls.target.copy(c); camera.position.copy(c).addScaledVector(dir, dist);
   // label for which node is the odd one out
   const oddNode = t.p_i === 1 ? t.i : t.p_j === 1 ? t.j : t.p_k === 1 ? t.k : null;
-  showConceptImages([t.i, t.j, t.k], oddNode !== null ? new Set([oddNode]) : new Set());
+  _pendingImgNodeIds = [t.i, t.j, t.k];
+  _pendingImgOddSet = oddNode !== null ? new Set([oddNode]) : new Set();
+  showImgToggle(false);
 }
 function soloTetrahedron(tet){
   soloTetra = tet; soloTri = null; highlightedId = null;
@@ -1867,9 +1884,20 @@ function soloTetrahedron(tet){
     ${decompRows}
     <div class="ov-hint">|s³| ≈ 0 → balanced faces, no net curl.<br>Large |s³| → agreement cycles around this tetrahedron.</div>`;
   $("tetraOverlay").style.display = "block";
-  showConceptImages(ns, new Set());
+  _pendingImgNodeIds = ns;
+  _pendingImgOddSet = new Set();
+  showImgToggle(false);
 }
-function clearHighlight(){ highlightedId=null; soloTri=null; soloTetra=null; neighborNodes.clear(); incidentTris.clear(); soloTetraNodes.clear(); soloTetraEdgeKeys.clear(); soloTetraTriKeys.clear(); $("tetraOverlay").style.display="none"; clearConceptLabels(); rebuild(); }
+function clearHighlight(){ highlightedId=null; soloTri=null; soloTetra=null; neighborNodes.clear(); incidentTris.clear(); soloTetraNodes.clear(); soloTetraEdgeKeys.clear(); soloTetraTriKeys.clear(); $("tetraOverlay").style.display="none"; clearConceptLabels(); _pendingImgNodeIds=[]; _pendingImgOddSet=new Set(); $("imgToggleBtn").style.display="none"; rebuild(); }
+
+function showImgToggle(on) {
+  const btn = $("imgToggleBtn");
+  btn.style.display = "block";
+  btn.setAttribute("aria-pressed", on ? "true" : "false");
+  btn.textContent = on ? "🖼 Hide images" : "🖼 Show images";
+  if (on) showConceptImages(_pendingImgNodeIds, _pendingImgOddSet);
+  else clearConceptLabels();
+}
 
 function clearConceptLabels() {
   for (const obj of conceptLabels) scene.remove(obj);
@@ -1983,6 +2011,7 @@ function bindControls(){
   const closePanel = () => { panel.classList.remove("open"); backdrop.classList.remove("open"); };
   $("menuBtn").addEventListener("click", () => panel.classList.contains("open") ? closePanel() : openPanel());
   backdrop.addEventListener("click", closePanel);
+  $("imgToggleBtn").addEventListener("click", () => showImgToggle($("imgToggleBtn").getAttribute("aria-pressed") !== "true"));
 
   // Mobile: collapsible .group sections
   const mq = window.matchMedia("(max-width: 767px)");
