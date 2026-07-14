@@ -112,28 +112,32 @@
   #tetraOverlay .ov-hint { font-size: 10px; color: var(--text-dim); margin-top: 8px; line-height: 1.4; border-top: 1px solid var(--border); padding-top: 6px; }
   #tetraOverlay .ov-close { float: right; cursor: pointer; color: var(--text-dim); font-size: 14px; line-height: 1; margin: -2px -2px 0 0; background: none; border: none; padding: 0; width: auto; }
 
-  /* ── Concept image strip (shown when triangle/tetrahedron isolated) ──────── */
-  #conceptImages {
-    display: none; position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
-    flex-direction: row; gap: 10px; z-index: 10; pointer-events: none;
-    max-width: calc(100% - 32px); overflow-x: auto;
+  /* ── Concept image cards (CSS2DObjects billboarded at each vertex) ───────── */
+  .nlc-card {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    background: rgba(15,17,21,.88); border: 1px solid var(--border); border-radius: 10px;
+    padding: 7px 7px 6px; backdrop-filter: blur(8px);
+    pointer-events: auto; user-select: none;
+    transform: translateX(-50%); /* centre on node x */
   }
-  .ci-card {
-    display: flex; flex-direction: column; align-items: center; gap: 5px;
-    background: rgba(20,23,30,.90); border: 1px solid var(--border); border-radius: 10px;
-    padding: 8px; backdrop-filter: blur(6px); flex-shrink: 0;
+  .nlc-img {
+    width: 96px; height: 96px; object-fit: cover; border-radius: 6px;
+    background: #1a1d24; display: block;
   }
-  .ci-card img {
-    width: 90px; height: 90px; object-fit: cover; border-radius: 6px;
-    background: var(--border);
+  .nlc-name { font-size: 11px; font-weight: 600; color: var(--text); text-align: center; max-width: 96px; }
+  .nlc-role-odd  { font-size: 10px; color: #f87171; font-weight: 600; }
+  .nlc-role-sim  { font-size: 10px; color: var(--text-dim); }
+  .nlc-nav {
+    display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--text-dim);
   }
-  .ci-card .ci-label { font-size: 11px; color: var(--text); text-align: center; max-width: 90px; }
-  .ci-card .ci-odd  { font-size: 10px; color: #f87171; font-weight: 600; }
-  .ci-card .ci-even { font-size: 10px; color: var(--text-dim); }
+  .nlc-nav button {
+    background: none; border: 1px solid var(--border); border-radius: 4px; color: var(--text);
+    font-size: 13px; line-height: 1; padding: 1px 5px; cursor: pointer;
+  }
+  .nlc-nav button:hover { background: var(--border); }
   @media (max-width: 767px) {
-    #conceptImages { bottom: 8px; gap: 6px; }
-    .ci-card img { width: 72px; height: 72px; }
-    .ci-card { padding: 6px; }
+    .nlc-img { width: 72px; height: 72px; }
+    .nlc-card { padding: 5px 5px 4px; }
   }
 
   /* ── Mobile menu button (hidden on desktop) ─────────────────────────────── */
@@ -310,7 +314,6 @@
     <div id="tooltip"></div>
     <div id="loading">Loading 3D engine &amp; data …</div>
     <div id="tetraOverlay"></div>
-    <div id="conceptImages"></div>
   </div>
 
 </div>
@@ -355,6 +358,7 @@
 <script type="module">
 import * as THREE from 'three';
 import { TrackballControls } from 'three/addons/controls/TrackballControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 // the force simulation runs in a Web Worker (see WORKER_SRC) to keep the UI smooth
 
 const CAT_COLORS = {
@@ -373,8 +377,9 @@ function agrRgb(t){
 
 const tooltip = document.getElementById("tooltip");
 const $ = id => document.getElementById(id);
-let data, nodeById, scene, camera, renderer, controls, raycaster;
-let thingsConcepts = null; // loaded from data/things_concepts.json when available
+let data, nodeById, scene, camera, renderer, labelRenderer, controls, raycaster;
+let thingsConcepts = null, thingsImages = null;
+let conceptLabels = [];
 let worker = null, positionsDirty = false, pendingFit = false;   // Web Worker force layout
 let nodeMesh, pickMesh, edgeMesh, edgeGeom, triMesh, triGeom, tetraMesh, tetraGeom;
 let visEdges = [], visTris = [];
@@ -1240,6 +1245,7 @@ initThree();
 bindControls();
 initChat();
 fetch("data/things_concepts.json").then(r => r.json()).then(c => { thingsConcepts = c; }).catch(() => {});
+fetch("data/things_images.json").then(r => r.json()).then(d => { thingsImages = d; }).catch(() => {});
 fetch("output/data.json")
   .then(r => r.json())
   .then(raw => { $("loading").remove(); setData(raw); animate(); })
@@ -1258,6 +1264,11 @@ function initThree(){
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(w, h, false);   // false = don't set canvas CSS size; CSS handles that
   el.appendChild(renderer.domElement);
+
+  labelRenderer = new CSS2DRenderer();
+  labelRenderer.setSize(w, h);
+  labelRenderer.domElement.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible';
+  el.appendChild(labelRenderer.domElement);
   controls = new TrackballControls(camera, renderer.domElement);
   controls.rotateSpeed = 2.0;
   controls.zoomSpeed = 1.2;
@@ -1274,6 +1285,7 @@ function initThree(){
     const w = e.contentRect.width, h = e.contentRect.height;
     if (w === 0 || h === 0) return;
     renderer.setSize(w, h, false);
+    if (labelRenderer) labelRenderer.setSize(w, h);
     camera.aspect = w / h; camera.updateProjectionMatrix();
     if (controls) controls.handleResize();
     if (!_fitPending){ _fitPending = true; requestAnimationFrame(() => { _fitPending = false; if (data) fitView(); }); }
@@ -1672,6 +1684,7 @@ function animate(){
   if (pendingFit){ pendingFit = false; fitView(); }                   // frame once the worker settles
   if (controls) controls.update();
   if (renderer) renderer.render(scene, camera);
+  if (labelRenderer) labelRenderer.render(scene, camera);
 }
 function reheat(a=0.7){ if (worker) worker.postMessage({ type: "reheat", a }); }
 // frame the camera so the whole (visible) layout fits, preserving the view angle
@@ -1856,26 +1869,80 @@ function soloTetrahedron(tet){
   $("tetraOverlay").style.display = "block";
   showConceptImages(ns, new Set());
 }
-function clearHighlight(){ highlightedId=null; soloTri=null; soloTetra=null; neighborNodes.clear(); incidentTris.clear(); soloTetraNodes.clear(); soloTetraEdgeKeys.clear(); soloTetraTriKeys.clear(); $("tetraOverlay").style.display="none"; $("conceptImages").style.display="none"; rebuild(); }
+function clearHighlight(){ highlightedId=null; soloTri=null; soloTetra=null; neighborNodes.clear(); incidentTris.clear(); soloTetraNodes.clear(); soloTetraEdgeKeys.clear(); soloTetraTriKeys.clear(); $("tetraOverlay").style.display="none"; clearConceptLabels(); rebuild(); }
+
+function clearConceptLabels() {
+  for (const obj of conceptLabels) scene.remove(obj);
+  conceptLabels = [];
+}
 
 function showConceptImages(nodeIds, oddSet) {
-  const el = $("conceptImages");
-  if (!thingsConcepts) { el.style.display = "none"; return; }
-  el.innerHTML = "";
+  clearConceptLabels();
+  if (!thingsConcepts || !scene) return;
+
   for (const id of nodeIds) {
-    const c = thingsConcepts[id - 1];
-    if (!c) continue;
-    const isOdd = oddSet.has(id);
+    const concept = thingsConcepts[id - 1];
+    if (!concept) continue;
+    const node = nodeById.get(id);
+    if (!node) continue;
+
+    const imgs = (thingsImages && thingsImages[concept.uid]) || [`${concept.uid}_01b.jpg`];
+    let idx = 0;
+
     const card = document.createElement("div");
-    card.className = "ci-card";
-    card.innerHTML =
-      `<img src="images/${c.uid}/${c.uid}_01b.jpg" alt="${c.word}" ` +
-      `onerror="this.style.opacity='.25'">`+
-      `<div class="ci-label">${c.word}</div>` +
-      (isOdd ? `<div class="ci-odd">odd one out</div>` : `<div class="ci-even">similar</div>`);
-    el.appendChild(card);
+    card.className = "nlc-card";
+
+    const imgEl = document.createElement("img");
+    imgEl.className = "nlc-img";
+    imgEl.alt = concept.word;
+    imgEl.src = `object_images/${concept.uid}/${imgs[idx]}`;
+    imgEl.onerror = () => { imgEl.style.opacity = "0.2"; };
+
+    const nameEl = document.createElement("div");
+    nameEl.className = "nlc-name";
+    nameEl.textContent = concept.word;
+
+    const roleEl = document.createElement("div");
+    roleEl.className = oddSet.has(id) ? "nlc-role-odd" : "nlc-role-sim";
+    roleEl.textContent = oddSet.has(id) ? "odd one out" : "similar";
+
+    card.appendChild(imgEl);
+    card.appendChild(nameEl);
+    card.appendChild(roleEl);
+
+    if (imgs.length > 1) {
+      const nav = document.createElement("div");
+      nav.className = "nlc-nav";
+      const counter = document.createElement("span");
+      counter.textContent = `1/${imgs.length}`;
+      const prev = document.createElement("button");
+      prev.textContent = "‹";
+      const next = document.createElement("button");
+      next.textContent = "›";
+      prev.addEventListener("click", e => {
+        e.stopPropagation();
+        idx = (idx - 1 + imgs.length) % imgs.length;
+        imgEl.src = `object_images/${concept.uid}/${imgs[idx]}`;
+        counter.textContent = `${idx + 1}/${imgs.length}`;
+      });
+      next.addEventListener("click", e => {
+        e.stopPropagation();
+        idx = (idx + 1) % imgs.length;
+        imgEl.src = `object_images/${concept.uid}/${imgs[idx]}`;
+        counter.textContent = `${idx + 1}/${imgs.length}`;
+      });
+      nav.appendChild(prev);
+      nav.appendChild(counter);
+      nav.appendChild(next);
+      card.appendChild(nav);
+    }
+
+    const label = new CSS2DObject(card);
+    // offset above the node sphere
+    label.position.set(node.x, node.y + (node._r || 4) + 18, node.z);
+    scene.add(label);
+    conceptLabels.push(label);
   }
-  el.style.display = "flex";
 }
 function flyTo(n){
   controls.target.set(n.x, n.y, n.z);
