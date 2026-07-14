@@ -1251,6 +1251,40 @@ function initThree(){
 
   renderer.domElement.addEventListener("mousemove", onHover);
   renderer.domElement.addEventListener("dblclick", onDblClick);
+
+  // Touch support: single-tap shows tooltip; double-tap isolates (mirrors dblclick)
+  let _touchStartX = 0, _touchStartY = 0;
+  let _lastTapTime = 0, _lastTapX = 0, _lastTapY = 0;
+
+  renderer.domElement.addEventListener("touchstart", ev => {
+    if (ev.touches.length !== 1) return;
+    _touchStartX = ev.touches[0].clientX;
+    _touchStartY = ev.touches[0].clientY;
+  }, { passive: true });
+
+  renderer.domElement.addEventListener("touchend", ev => {
+    if (ev.changedTouches.length !== 1) return;
+    const touch = ev.changedTouches[0];
+    // Ignore drags (finger moved > 10px from touchstart)
+    if (Math.hypot(touch.clientX - _touchStartX, touch.clientY - _touchStartY) > 10) return;
+
+    const now = Date.now();
+    const isDoubleTap = (now - _lastTapTime < 300) &&
+                        Math.hypot(touch.clientX - _lastTapX, touch.clientY - _lastTapY) < 20;
+    const synth = { clientX: touch.clientX, clientY: touch.clientY };
+
+    if (isDoubleTap) {
+      ev.preventDefault();
+      _lastTapTime = 0; // reset so a third tap doesn't re-trigger
+      tooltip.style.opacity = 0;
+      onDblClick(synth);
+    } else {
+      _lastTapTime = now;
+      _lastTapX = touch.clientX;
+      _lastTapY = touch.clientY;
+      onHover(synth);
+    }
+  }, { passive: false });
 }
 
 // (re)load a processed graph object and rebuild the scene
@@ -1665,7 +1699,7 @@ function onHover(ev){
             const s3v = tet.s3 !== undefined ? tet.s3.toFixed(4) : "—";
             html = `<div class="t-title">Tetrahedron (${ns.join(",")})</div>
               <div class="t-row"><span>s³ curl score</span><span>${s3v}</span></div>
-              <div style="font-size:10px;color:var(--text-dim);margin-top:4px">Double-click to isolate</div>`;
+              <div style="font-size:10px;color:var(--text-dim);margin-top:4px">Double-tap/click to isolate</div>`;
           }
         } else {
           html = `<div class="t-title">Triangle (${t.i}, ${t.j}, ${t.k})</div>
