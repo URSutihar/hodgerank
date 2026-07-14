@@ -395,6 +395,8 @@ let data, nodeById, scene, camera, renderer, labelRenderer, controls, raycaster;
 let thingsConcepts = null, thingsImages = null;
 let conceptLabels = [];
 let _pendingImgNodeIds = [], _pendingImgOddSet = new Set();
+// 0 for testset (node IDs 0-indexed), -1 for full THINGS (node IDs 1-indexed)
+let conceptIdxOffset = 0;
 let worker = null, positionsDirty = false, pendingFit = false;   // Web Worker force layout
 let nodeMesh, pickMesh, edgeMesh, edgeGeom, triMesh, triGeom, tetraMesh, tetraGeom;
 let visEdges = [], visTris = [];
@@ -1355,6 +1357,7 @@ function setData(raw){
   positionsDirty = false; pendingFit = false;
 
   const precomputed = !!(raw.meta && raw.meta.precomputed);
+  conceptIdxOffset = precomputed ? -1 : 0; // full THINGS: 1-indexed; testsets: 0-indexed
   data = raw;
   nodeById = new Map();
   data.nodes.forEach(n => { nodeById.set(n.id, n); n._r = 1.6 + Math.sqrt(n.n_triangles)*1.3; });
@@ -1909,7 +1912,7 @@ function showConceptImages(nodeIds, oddSet) {
   if (!thingsConcepts || !scene) return;
 
   for (const id of nodeIds) {
-    const concept = thingsConcepts[id - 1];
+    const concept = thingsConcepts[id + conceptIdxOffset];
     if (!concept) continue;
     const node = nodeById.get(id);
     if (!node) continue;
