@@ -397,6 +397,12 @@ let conceptLabels = [];
 let _pendingImgNodeIds = [], _pendingImgOddSet = new Set();
 // 0 for testset (node IDs 0-indexed), -1 for full THINGS (node IDs 1-indexed)
 let conceptIdxOffset = 0;
+
+function nodeName(id) {
+  if (!thingsConcepts) return String(id);
+  const c = thingsConcepts[id + conceptIdxOffset];
+  return c ? c.word : String(id);
+}
 let worker = null, positionsDirty = false, pendingFit = false;   // Web Worker force layout
 let nodeMesh, pickMesh, edgeMesh, edgeGeom, triMesh, triGeom, tetraMesh, tetraGeom;
 let visEdges = [], visTris = [];
@@ -1144,7 +1150,7 @@ function nodePublic(n){ return { id:n.id, category:n.category, mean_oddness:n.me
 function triPublic(t){ return { triplet:[t.i,t.j,t.k], p_i:t.p_i, p_j:t.p_j, p_k:t.p_k, agreement:t.agreement, judgments:t.total_count }; }
 function findTri(i,j,k){ const s=[+i,+j,+k].sort((a,b)=>a-b); return data.triangles.find(t=>t.i===s[0]&&t.j===s[1]&&t.k===s[2]); }
 
-const triLabel = t => `triplet <b>(${t.i}, ${t.j}, ${t.k})</b>`;
+const triLabel = t => `triplet <b>${nodeName(t.i)} · ${nodeName(t.j)} · ${nodeName(t.k)}</b> <span style="color:var(--text-dim);font-size:11px">(#${t.i}, #${t.j}, #${t.k})</span>`;
 const focusTri = t => () => soloTriangle(t);
 const focusNode = id => () => { const n = nodeById.get(id); if (n){ highlightNode(id); flyTo(n); } };
 
@@ -1178,7 +1184,7 @@ function answerQuery(q){
   if (mNode){
     const id = +mNode[1]; const n = nodeById.get(id);
     if (!n) return { html: `No node with id ${id} in the current data.` };
-    return { html: `Node <b>${id}</b> — <b>${n.category.replace(/_/g,' ')}</b>. Mean oddness ${n.mean_oddness.toFixed(3)}, variance ${n.var_oddness.toFixed(3)}, appears in ${n.n_triangles} triangle(s).`, focus: focusNode(id) };
+    return { html: `<b>${nodeName(id)}</b> (#${id}) — <b>${n.category.replace(/_/g,' ')}</b>. Mean oddness ${n.mean_oddness.toFixed(3)}, variance ${n.var_oddness.toFixed(3)}, appears in ${n.n_triangles} triangle(s).`, focus: focusNode(id) };
   }
 
   // --- specific triplet lookup (three numbers + triangle context) ---
@@ -1228,7 +1234,7 @@ function answerQuery(q){
       const x = arr[0];
       let label, focus;
       if (plan.kind==="tri"){ label = triLabel(x); focus = focusTri(x); }
-      else if (plan.kind==="node"){ label = `node <b>${x.id}</b>`; focus = focusNode(x.id); }
+      else if (plan.kind==="node"){ label = `<b>${nodeName(x.id)}</b> (#${x.id})`; focus = focusNode(x.id); }
       else { label = `edge <b>(${eidOf(x.source)}, ${eidOf(x.target)})</b>`; }
       const tie = ties > 1 ? ` (tied with ${ties-1} other${ties-1>1?"s":""} at this value)` : "";
       return { html: `The ${dirWord} ${plan.unit} is ${label} with <b>${fmt(best)}</b> ${plan.unit}${tie}.`, focus };
@@ -1737,7 +1743,7 @@ function onHover(ev){
   if (!tetraMode){
     const nh = raycaster.intersectObject(pickMesh);
     if (nh.length){ const n = data.nodes[nh[0].instanceId];
-      if (!n._hidden) html = `<div class="t-title">Node ${n.id}</div>
+      if (!n._hidden) html = `<div class="t-title">${nodeName(n.id)}<span style="color:var(--text-dim);font-weight:400;font-size:10px;margin-left:5px">#${n.id}</span></div>
         <div class="t-row"><span>Category</span><span>${n.category.replace(/_/g,' ')}</span></div>
         <div class="t-row"><span>Mean oddness</span><span>${n.mean_oddness.toFixed(3)}</span></div>
         <div class="t-row"><span>Oddness var</span><span>${n.var_oddness.toFixed(3)}</span></div>
@@ -1759,15 +1765,15 @@ function onHover(ev){
           if (tet){
             const ns = tet.nodes.slice().sort((a,b)=>a-b);
             const s3v = tet.s3 !== undefined ? tet.s3.toFixed(4) : "—";
-            html = `<div class="t-title">Tetrahedron (${ns.join(",")})</div>
+            html = `<div class="t-title">${ns.map(nodeName).join(" · ")}<span style="color:var(--text-dim);font-weight:400;font-size:10px;display:block">#${ns.join(", #")}</span></div>
               <div class="t-row"><span>s³ curl score</span><span>${s3v}</span></div>
               <div style="font-size:10px;color:var(--text-dim);margin-top:4px">Double-tap/click to isolate</div>`;
           }
         } else {
-          html = `<div class="t-title">Triangle (${t.i}, ${t.j}, ${t.k})</div>
-            <div class="t-row"><span>P(${t.i} odd)</span><span>${t.p_i.toFixed(3)}</span></div>
-            <div class="t-row"><span>P(${t.j} odd)</span><span>${t.p_j.toFixed(3)}</span></div>
-            <div class="t-row"><span>P(${t.k} odd)</span><span>${t.p_k.toFixed(3)}</span></div>
+          html = `<div class="t-title">${nodeName(t.i)} · ${nodeName(t.j)} · ${nodeName(t.k)}<span style="color:var(--text-dim);font-weight:400;font-size:10px;display:block">#${t.i}, #${t.j}, #${t.k}</span></div>
+            <div class="t-row"><span>P(${nodeName(t.i)} odd)</span><span>${t.p_i.toFixed(3)}</span></div>
+            <div class="t-row"><span>P(${nodeName(t.j)} odd)</span><span>${t.p_j.toFixed(3)}</span></div>
+            <div class="t-row"><span>P(${nodeName(t.k)} odd)</span><span>${t.p_k.toFixed(3)}</span></div>
             <div class="t-row"><span>Agreement</span><span>${t.agreement.toFixed(3)}</span></div>
             <div class="t-row"><span>Judgments</span><span>${t.total_count}</span></div>`;
         }
@@ -1867,7 +1873,7 @@ function soloTetrahedron(tet){
   ].map(([f, sign]) => {
     const t = triMap.get(f.join("_"));
     const ag = t ? t.agreement.toFixed(3) : "—";
-    return `<div class="t-row"><span>${sign>0?"+":"−"}(${f.join(",")})</span><span>${ag}</span></div>`;
+    return `<div class="t-row"><span>${sign>0?"+":"−"}(${f.map(nodeName).join(",")})</span><span>${ag}</span></div>`;
   }).join("");
   const s3v = tet.s3 !== undefined ? tet.s3.toFixed(4) : "—";
   const meta = (data.meta || {});
@@ -1879,7 +1885,7 @@ function soloTetrahedron(tet){
     : "";
   $("tetraOverlay").innerHTML = `
     <button class="ov-close" onclick="clearHighlight()">✕</button>
-    <div class="ov-title">Tetrahedron (${ns.join(", ")})</div>
+    <div class="ov-title">${ns.map(nodeName).join(" · ")}<span style="color:var(--text-dim);font-weight:400;font-size:10px;display:block;margin-top:2px">#${ns.join(", #")}</span></div>
     <div class="ov-section">Face agreements (signed)</div>
     ${faceRows}
     <div class="ov-section">Curl score</div>
