@@ -1765,12 +1765,16 @@ function onHover(ev){
           if (tet){
             const ns = tet.nodes.slice().sort((a,b)=>a-b);
             const s3v = tet.s3 !== undefined ? tet.s3.toFixed(4) : "—";
-            html = `<div class="t-title">${ns.map(nodeName).join(" · ")}<span style="color:var(--text-dim);font-weight:400;font-size:10px;display:block">#${ns.join(", #")}</span></div>
+            const tetIdx = data.tetrahedra ? data.tetrahedra.indexOf(tet) : -1;
+            const tetNum = tetIdx >= 0 ? `Tetrahedron #${tetIdx + 1}` : "Tetrahedron";
+            html = `<div style="font-size:10px;color:var(--text-dim);margin-bottom:3px">${tetNum}</div><div class="t-title">${ns.map(nodeName).join(" · ")}<span style="color:var(--text-dim);font-weight:400;font-size:10px;display:block">#${ns.join(", #")}</span></div>
               <div class="t-row"><span>s³ curl score</span><span>${s3v}</span></div>
               <div style="font-size:10px;color:var(--text-dim);margin-top:4px">Double-tap/click to isolate</div>`;
           }
         } else {
-          html = `<div class="t-title">${nodeName(t.i)} · ${nodeName(t.j)} · ${nodeName(t.k)}<span style="color:var(--text-dim);font-weight:400;font-size:10px;display:block">#${t.i}, #${t.j}, #${t.k}</span></div>
+          const tIdx = data.triangles ? data.triangles.indexOf(t) : -1;
+          const tNum = tIdx >= 0 ? `Triangle #${tIdx + 1}` : "Triangle";
+          html = `<div style="font-size:10px;color:var(--text-dim);margin-bottom:3px">${tNum}</div><div class="t-title">${nodeName(t.i)} · ${nodeName(t.j)} · ${nodeName(t.k)}<span style="color:var(--text-dim);font-weight:400;font-size:10px;display:block">#${t.i}, #${t.j}, #${t.k}</span></div>
             <div class="t-row"><span>P(${nodeName(t.i)} odd)</span><span>${t.p_i.toFixed(3)}</span></div>
             <div class="t-row"><span>P(${nodeName(t.j)} odd)</span><span>${t.p_j.toFixed(3)}</span></div>
             <div class="t-row"><span>P(${nodeName(t.k)} odd)</span><span>${t.p_k.toFixed(3)}</span></div>
