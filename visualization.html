@@ -1041,12 +1041,16 @@ Definitions:
 - Node categories: consistently_odd, consistently_similar, context_dependent, mixed. Current counts: ${JSON.stringify(c)}.
 - Edges carry a "similarity" weight. An edge usually belongs to only ONE triangle.
 - A "shared edge" is an edge belonging to exactly TWO triangles (the only places cyclic "curl" inconsistency arises). "Faces/triangles that share an edge" = triangles containing at least one shared edge (get_overview -> faces_with_shared_edge). This is typically a SMALL number — do NOT assume every triangle shares an edge.
+- Triangles are numbered 1–${data.triangles.length} in display order. "Triangle #51" or "triangle number 51" refers to index 51.
+- Nodes and triangles have concept names (e.g. "blowfish", "avocado"). You can search by name with search_by_name.
 RULES:
 1. You have NO prior knowledge of this dataset's numbers. Before stating ANY count, name, ranking, or statistic, you MUST get it from a tool result in THIS turn — never invent, recall, or estimate. Tool outputs and the counts in this prompt are the only valid sources.
 2. Totals/counts (edges, triangles, shared_edges, faces_with_shared_edge, categories) come from get_overview.
-3. "which/most/least/top" -> query_items. A specific node/triplet -> lookup_node / lookup_triplet.
-4. If the user asks to see/show/highlight/focus something, also call focus_node or focus_triplet.
-5. Be concise. Write triplets as (i, j, k).`;
+3. "which/most/least/top" -> query_items. A specific node/triplet by IDs -> lookup_node / lookup_triplet.
+4. "triangle #N" or "triangle number N" -> lookup_triangle_by_index(index=N).
+5. Any concept name (animal, object, food, etc.) -> search_by_name first to get node IDs and matching triangles.
+6. If the user asks to see/show/highlight/focus something, also call focus_node or focus_triplet.
+7. Be concise. Write triplets as (i, j, k) with concept names.`;
 }
 const AI_TOOLS = [
   { type:"function", function:{ name:"get_overview", description:"Aggregate stats: counts, category breakdown, and min/max/mean of agreement and judgments.", parameters:{ type:"object", properties:{} } } },
@@ -1061,6 +1065,8 @@ const AI_TOOLS = [
   { type:"function", function:{ name:"lookup_triplet", description:"Stats for one triplet by its three node ids (any order).", parameters:{ type:"object", properties:{ i:{type:"integer"}, j:{type:"integer"}, k:{type:"integer"} }, required:["i","j","k"] } } },
   { type:"function", function:{ name:"focus_node", description:"Highlight a node and fly the 3D camera to it.", parameters:{ type:"object", properties:{ id:{type:"integer"} }, required:["id"] } } },
   { type:"function", function:{ name:"focus_triplet", description:"Isolate a triplet (2-simplex) in the 3D view.", parameters:{ type:"object", properties:{ i:{type:"integer"}, j:{type:"integer"}, k:{type:"integer"} }, required:["i","j","k"] } } },
+  { type:"function", function:{ name:"lookup_triangle_by_index", description:"Look up a triangle by its 1-based display index (Triangle #N). Use when the user says 'triangle 51' or 'triplet number 51'.", parameters:{ type:"object", properties:{ index:{type:"integer", description:"1-based triangle number shown in the UI"} }, required:["index"] } } },
+  { type:"function", function:{ name:"search_by_name", description:"Search nodes or triangles by concept name (word). Returns matching nodes and triangles containing them.", parameters:{ type:"object", properties:{ name:{type:"string", description:"concept name or partial name to search for"} }, required:["name"] } } },
 ];
 async function askLLM(userText, thinkingEl){
   const cfg = aiCfg();
@@ -1111,6 +1117,23 @@ function runTool(name, a){
     if (name === "lookup_triplet"){ const t = findTri(a.i,a.j,a.k); if (!t) return { error:`no triplet (${a.i}, ${a.j}, ${a.k})` }; const r = triPublic(t); r.__focus = focusTri(t); return r; }
     if (name === "focus_node"){ const n = nodeById.get(+a.id); return n ? { ok:true, __focus: focusNode(+a.id) } : { error:`no node ${a.id}` }; }
     if (name === "focus_triplet"){ const t = findTri(a.i,a.j,a.k); return t ? { ok:true, __focus: focusTri(t) } : { error:"no such triplet" }; }
+    if (name === "lookup_triangle_by_index"){
+      const idx = +a.index - 1;
+      if (idx < 0 || idx >= data.triangles.length) return { error:`index ${a.index} out of range (1–${data.triangles.length})` };
+      const t = data.triangles[idx];
+      const r = triPublic(t); r.triangle_number = +a.index; r.names = [nodeName(t.i), nodeName(t.j), nodeName(t.k)]; r.__focus = focusTri(t); return r;
+    }
+    if (name === "search_by_name"){
+      const q = (a.name||"").toLowerCase().trim();
+      const nodes = data.nodes.filter(n => nodeName(n.id).toLowerCase().includes(q)).slice(0,10)
+        .map(n => ({ id:n.id, name:nodeName(n.id), category:n.category, n_triangles:n.n_triangles }));
+      const tris = data.triangles.filter(t => [t.i,t.j,t.k].some(id => nodeName(id).toLowerCase().includes(q))).slice(0,5)
+        .map(t => ({ triplet:[t.i,t.j,t.k], names:[nodeName(t.i),nodeName(t.j),nodeName(t.k)], agreement:t.agreement, judgments:t.total_count }));
+      const r = { nodes, triangles_containing: tris };
+      if (tris.length) r.__focus = focusTri(data.triangles.find(t => [t.i,t.j,t.k].some(id => nodeName(id).toLowerCase().includes(q))));
+      else if (nodes.length) r.__focus = focusNode(nodes[0].id);
+      return r;
+    }
     return { error:"unknown tool " + name };
   } catch(e){ return { error:String(e.message || e) }; }
 }
