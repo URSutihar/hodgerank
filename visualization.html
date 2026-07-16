@@ -1196,6 +1196,38 @@ function answerQuery(q){
     return { html: `${triLabel(t)}: P(odd) = ${t.p_i.toFixed(2)}/${t.p_j.toFixed(2)}/${t.p_k.toFixed(2)}, agreement ${t.agreement.toFixed(3)}, <b>${t.total_count}</b> judgments.`, focus: focusTri(t) };
   }
 
+  // --- triangle by index number (e.g. "triangle #47", "show triplet 200") ---
+  const mTriNum = s.match(/\b(?:triangle|triplet|simplex)\s*#\s*(\d+)\b/) ||
+                  (!/(\d+)[\s,]+(\d+)/.test(s) && s.match(/\b(?:triangle|triplet|simplex)\s+(\d+)\b/));
+  if (mTriNum){
+    const idx = +mTriNum[1] - 1;
+    if (idx < 0 || idx >= data.triangles.length)
+      return { html: `No triangle #${idx+1} — this dataset has ${data.triangles.length} triangles (numbered 1–${data.triangles.length}).` };
+    const t = data.triangles[idx];
+    return { html: `Triangle #${idx+1}: ${triLabel(t)} — P(odd) = ${t.p_i.toFixed(2)}/${t.p_j.toFixed(2)}/${t.p_k.toFixed(2)}, agreement ${t.agreement.toFixed(3)}, <b>${t.total_count}</b> judgments.`, focus: focusTri(t) };
+  }
+
+  // --- triangle by concept label (e.g. "triangle with avocado", "find burrito drill") ---
+  const QUERY_KEYWORDS = new Set(["triangle","triplet","simplex","face","node","edge","find","show","with","containing","label","name","the","and","or","of","in","a","an","me","is","are","what","which","how","many","number","count","total","average","mean","most","least","highest","lowest","top","bottom"]);
+  if (thingsConcepts && /\b(triplet|triangle|simplex|with|containing|find|show|label|name)\b/.test(s)){
+    const matched = data.nodes.filter(n => {
+      const name = nodeName(n.id).toLowerCase();
+      return name.length > 2 && !QUERY_KEYWORDS.has(name) && s.includes(name);
+    });
+    if (matched.length >= 1){
+      const matchIds = new Set(matched.map(n => n.id));
+      const hits = data.triangles.filter(t => matchIds.has(t.i) || matchIds.has(t.j) || matchIds.has(t.k));
+      if (!hits.length){
+        return { html: `No triangles found containing ${matched.map(n=>`<b>${nodeName(n.id)}</b>`).join(' + ')}.` };
+      }
+      hits.sort((a,b) => [b.i,b.j,b.k].filter(id=>matchIds.has(id)).length - [a.i,a.j,a.k].filter(id=>matchIds.has(id)).length);
+      const t = hits[0];
+      const nameStr = matched.map(n=>`<b>${nodeName(n.id)}</b>`).join(' + ');
+      const more = hits.length > 1 ? ` (${hits.length} triangles total contain ${nameStr})` : "";
+      return { html: `Found triangle with ${nameStr}${more}: ${triLabel(t)} — agreement ${t.agreement.toFixed(3)}, <b>${t.total_count}</b> judgments.`, focus: focusTri(t) };
+    }
+  }
+
   // --- averages ---
   if (/\b(average|mean|avg|typical)\b/.test(s)){
     if (/judg|asked|people|ppl|respons|sample/.test(s)) return { html: `Average judgments per triplet: <b>${avg(data.triangles.map(t=>t.total_count)).toFixed(2)}</b>.` };
