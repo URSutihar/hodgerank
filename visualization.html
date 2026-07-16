@@ -1132,7 +1132,7 @@ function queryItemsTool(entity, metric, order, limit){
   const asc = order === "asc";
   let arr, key, fmtItem;
   if (entity === "triangle"){ key = TRI_METRIC[metric]; arr = data.triangles;
-    fmtItem = t => ({ triplet:[t.i,t.j,t.k], value:key(t), judgments:t.total_count, agreement:t.agreement }); }
+    fmtItem = t => ({ triplet:[t.i,t.j,t.k], names:[nodeName(t.i),nodeName(t.j),nodeName(t.k)], value:key(t), judgments:t.total_count, agreement:t.agreement }); }
   else if (entity === "node"){ key = NODE_METRIC[metric]; arr = data.nodes;
     fmtItem = n => ({ id:n.id, value:key(n), category:n.category, mean_oddness:n.mean_oddness, n_triangles:n.n_triangles }); }
   else if (entity === "edge"){ key = EDGE_METRIC[metric]; arr = data.edges;
@@ -1246,6 +1246,15 @@ function answerQuery(q){
       return `(${eidOf(x.source)}, ${eidOf(x.target)}) — ${fmt(plan.key(x))}`;
     });
     return { html: `${N} ${dirWord} by ${plan.unit}:<br>` + items.map(i=>"• "+i).join("<br>") };
+  }
+
+  // --- generic "show me a triangle" fallback ---
+  if (/\b(triplet|triangle|simplex|face)\b/.test(s)){
+    const pool = data.triangles.filter(t => !t._hidden);
+    if (pool.length){
+      const t = pool[Math.floor(Math.random() * pool.length)];
+      return { html: `Here is a random triangle: ${triLabel(t)} — agreement ${t.agreement.toFixed(3)}, ${t.total_count} judgments.`, focus: focusTri(t) };
+    }
   }
 
   return { html: "I couldn't parse that. I can answer about <b>judgments</b>, <b>agreement</b>, <b>oddness</b>, node degree, counts, averages, or a specific node/triplet. Try a suggestion chip." };
