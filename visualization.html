@@ -742,33 +742,37 @@ function generateD2(){
     entries.push((rjk+1)+" "+col+" 1");
   }
 
-  // --- sparse matvec helpers (D2 * x  and  D2^T * x) ---
-  const nnz = D2r.length;
-  function mulD2(x){                   // D2 * x : nT -> nE
-    const y = new Float64Array(nE);
-    for (let k = 0; k < nnz; k++) y[D2r[k]] += D2v[k] * x[D2c[k]];
-    return y;
-  }
-  function mulD2T(x){                  // D2^T * x : nE -> nT
-    const y = new Float64Array(nT);
-    for (let k = 0; k < nnz; k++) y[D2c[k]] += D2v[k] * x[D2r[k]];
-    return y;
-  }
-
-  // --- LSQR: solve min || D2^T s1 - s2 ||^2  (Paige & Saunders 1982) ---
-  // A = D2^T (nT x nE), b = s2 (nT), unknown x = s1 (nE)
+  // --- s1_star: use precomputed values if available, else run LSQR ---
+  const precomp = !!(data.meta && data.meta.precomputed);
+  let s1_star, fracExplained;
   const s2 = new Float64Array(nT);
   for (let c = 0; c < nT; c++) s2[c] = data.triangles[c].agreement;
-  const s1_star = sparseLSQR(mulD2T, mulD2, s2, nE, nT);
 
-  // reconstruction and fraction explained
-  const s2_hat = mulD2T(s1_star);
-  let norm_s2 = 0, norm_hat = 0, norm_res = 0;
-  for (let i = 0; i < nT; i++){
-    norm_s2 += s2[i]*s2[i]; norm_hat += s2_hat[i]*s2_hat[i];
-    const r = s2[i] - s2_hat[i]; norm_res += r*r;
+  if (precomp && data.edges.length && data.edges[0].s1_star !== undefined){
+    // Use precomputed s1_star stored on each edge
+    s1_star = new Float64Array(nE);
+    data.edges.forEach((e, idx) => { s1_star[idx] = e.s1_star || 0; });
+    // Compute fraction explained from stored values
+    const nnz2 = D2r.length;
+    function mulD2T2(x){ const y = new Float64Array(nT); for (let k=0;k<nnz2;k++) y[D2c[k]]+=D2v[k]*x[D2r[k]]; return y; }
+    const s2_hat = mulD2T2(s1_star);
+    let norm_s2 = 0, norm_hat = 0;
+    for (let i = 0; i < nT; i++){ norm_s2 += s2[i]*s2[i]; norm_hat += s2_hat[i]*s2_hat[i]; }
+    fracExplained = norm_s2 > 0 ? norm_hat / norm_s2 : 0;
+  } else {
+    // Uploaded/small datasets: run LSQR in browser
+    const nnz2 = D2r.length;
+    function mulD2(x){ const y = new Float64Array(nE); for (let k=0;k<nnz2;k++) y[D2r[k]]+=D2v[k]*x[D2c[k]]; return y; }
+    function mulD2T(x){ const y = new Float64Array(nT); for (let k=0;k<nnz2;k++) y[D2c[k]]+=D2v[k]*x[D2r[k]]; return y; }
+    s1_star = sparseLSQR(mulD2T, mulD2, s2, nE, nT);
+    const s2_hat = mulD2T(s1_star);
+    let norm_s2 = 0, norm_hat = 0, norm_res = 0;
+    for (let i = 0; i < nT; i++){
+      norm_s2 += s2[i]*s2[i]; norm_hat += s2_hat[i]*s2_hat[i];
+      const r = s2[i] - s2_hat[i]; norm_res += r*r;
+    }
+    fracExplained = norm_s2 > 0 ? norm_hat / norm_s2 : 0;
   }
-  const fracExplained = norm_s2 > 0 ? norm_hat / norm_s2 : 0;
 
   // --- format outputs ---
   const mtx = "%%MatrixMarket matrix coordinate integer general\n"

@@ -45,15 +45,20 @@ from itertools import combinations
 from pathlib import Path
 
 import numpy as np
-from scipy.sparse import csc_matrix
+from scipy.io import mmwrite
+from scipy.sparse import csc_matrix, save_npz
 from scipy.sparse.linalg import lsqr
 from scipy.special import softmax as scipy_softmax
 
 # ── paths ──────────────────────────────────────────────────────────────────
-DATA_DIR    = Path("data/alignet")
-LABELS_PATH = Path("data/imagenet_class_index.json")
+DATA_DIR     = Path("data/alignet")
+LABELS_PATH  = Path("data/imagenet_class_index.json")
 CONCEPTS_OUT = Path("data/alignnet_concepts.json")
-OUT_JSON    = Path("output/alignnet_graph.json")
+OUT_JSON     = Path("output/alignnet_graph.json")
+OUT_D2_NPZ   = Path("output/alignnet_D2.npz")
+OUT_D2_MTX   = Path("output/alignnet_D2.mtx")
+OUT_EDGE_CSV = Path("output/alignnet_edge_index.csv")
+OUT_S1_CSV   = Path("output/alignnet_s1_star.csv")
 
 DEFAULT_FILES = sorted(DATA_DIR.glob("*.npz")) if DATA_DIR.exists() else []
 
@@ -366,6 +371,43 @@ def compute_b3_curl(triangles, tetras):
     return s3, curl_frac
 
 
+def export_d2(triangles, edges, edge_idx, s1):
+    """Export D2 boundary operator + s1_star to files (like precompute.py)."""
+    nE = len(edges)
+    nT = len(triangles)
+    d2_rows, d2_cols, d2_vals = [], [], []
+    for c, t in enumerate(triangles):
+        rij = edge_idx.get((t["i"], t["j"]))
+        rik = edge_idx.get((t["i"], t["k"]))
+        rjk = edge_idx.get((t["j"], t["k"]))
+        if rij is None or rik is None or rjk is None:
+            continue
+        d2_rows.extend([rij, rik, rjk])
+        d2_cols.extend([c, c, c])
+        d2_vals.extend([1, -1, 1])
+
+    D2 = csc_matrix((d2_vals, (d2_rows, d2_cols)), shape=(nE, nT))
+    save_npz(OUT_D2_NPZ, D2)
+    mmwrite(str(OUT_D2_MTX), D2, comment=(
+        "D2 boundary operator (edges x triangles). "
+        "Column t = triplet (i,j,k); rows are edges per alignnet_edge_index.csv. "
+        "Triangle (i<j<k): edge(i,j)->+1, edge(i,k)->-1, edge(j,k)->+1."
+    ), field="integer")
+
+    with open(OUT_EDGE_CSV, "w") as f:
+        f.write("edge_id,node_a,node_b,similarity\n")
+        for e_idx, e in enumerate(edges):
+            f.write(f"{e_idx},{e['source']},{e['target']},{e['similarity']:.6f}\n")
+
+    with open(OUT_S1_CSV, "w") as f:
+        f.write("edge_id,node_a,node_b,s1_star\n")
+        for e_idx, e in enumerate(edges):
+            f.write(f"{e_idx},{e['source']},{e['target']},{s1[e_idx]:.8f}\n")
+
+    print(f"  wrote {OUT_D2_NPZ} and {OUT_D2_MTX} ({nE}×{nT}, {D2.nnz} nnz)", flush=True)
+    print(f"  wrote {OUT_EDGE_CSV} and {OUT_S1_CSV}", flush=True)
+
+
 def spring_layout_3d(nodes, edges):
     """3D spring layout using networkx."""
     import networkx as nx
@@ -453,6 +495,9 @@ def main():
         nd["x"] = round(p[0], 2)
         nd["y"] = round(p[1], 2)
         nd["z"] = round(p[2], 2)
+
+    print("\n9b. Exporting D2 matrix + s1_star ...", flush=True)
+    export_d2(triangles, edges, edge_idx, s1)
 
     print("\n10. Exporting JSON ...", flush=True)
     Path("output").mkdir(exist_ok=True)
