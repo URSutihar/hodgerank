@@ -1364,9 +1364,27 @@ function initThree(){
   controls.zoomSpeed = 1.2;
   controls.panSpeed = 0.8;
   controls.dynamicDampingFactor = 0.12;
-  controls.noZoom = false;
+  controls.noZoom = true;  // we implement zoom-to-cursor ourselves below
   controls.noPan = false;
   raycaster = new THREE.Raycaster();
+
+  // Zoom toward cursor (replaces TrackballControls built-in center-zoom)
+  renderer.domElement.addEventListener('wheel', e => {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    const rect = renderer.domElement.getBoundingClientRect();
+    const mx = ((e.clientX - rect.left) / rect.width)  *  2 - 1;
+    const my = -((e.clientY - rect.top)  / rect.height) * 2 + 1;
+    // 3-D point under cursor at current orbit-target depth
+    const dir = new THREE.Vector3(mx, my, 0.5).unproject(camera).sub(camera.position).normalize();
+    const depth = camera.position.distanceTo(controls.target);
+    const cursorPt = camera.position.clone().addScaledVector(dir, depth);
+    // Scale both camera and target away from / toward cursorPt
+    const factor = e.deltaY > 0 ? 1.12 : 1 / 1.12;
+    camera.position.sub(cursorPt).multiplyScalar(factor).add(cursorPt);
+    controls.target.sub(cursorPt).multiplyScalar(factor).add(cursorPt);
+    controls.update();
+  }, { capture: true, passive: false });
 
   // Observe the wrap (not #graph) so the canvas's own CSS size doesn't interfere
   let _fitPending = false;
@@ -1435,7 +1453,13 @@ function setData(raw){
   conceptIdxOffset = (precomputed && !isAlignnet) ? -1 : 0; // full THINGS: 1-indexed; others: 0-indexed
   data = raw;
   nodeById = new Map();
-  data.nodes.forEach(n => { nodeById.set(n.id, n); n._r = 1.6 + Math.sqrt(n.n_triangles)*1.3; });
+  // Normalize radius by dataset max so nodes look the same across THINGS, AligNET, testsets
+  const _maxTri = data.nodes.reduce((m,n) => Math.max(m, n.n_triangles), 1);
+  data.nodes.forEach(n => { nodeById.set(n.id, n); n._r = 2 + Math.sqrt(n.n_triangles / _maxTri) * 10; });
+  // Build node→triangles index for fast highlight/focus on large datasets
+  const _trisByNode = new Map(); data.nodes.forEach(n => _trisByNode.set(n.id, []));
+  data.triangles.forEach(t => { _trisByNode.get(t.i)?.push(t); _trisByNode.get(t.j)?.push(t); _trisByNode.get(t.k)?.push(t); });
+  data._trisByNode = _trisByNode;
   data.triangles.forEach(t => { t.vi = nodeById.get(t.i); t.vj = nodeById.get(t.j); t.vk = nodeById.get(t.k); });
 
   // min-triangles slider spans 1 .. max observed degree
@@ -1703,6 +1727,12 @@ function rebuild(){
   edgeGeom.setAttribute("color", new THREE.BufferAttribute(ec, 3));
 
   visTris = data.triangles.filter(t => !triHidden(t));
+  // Cap rendered triangles to avoid GPU/memory stalls; for solo modes always show the target
+  const TRI_RENDER_CAP = 50000;
+  if (visTris.length > TRI_RENDER_CAP && !soloTri && !soloTetra){
+    visTris.sort((a,b) => b.agreement - a.agreement);
+    visTris = visTris.slice(0, TRI_RENDER_CAP);
+  }
   triGeom.setAttribute("position", new THREE.BufferAttribute(new Float32Array(visTris.length*9), 3));
   const tc = new Float32Array(visTris.length*9), idx = new Uint32Array(visTris.length*3);
   visTris.forEach((t, k) => { const [r,g,b] = agrRgb(t.agreement);
@@ -1895,7 +1925,7 @@ function onDblClick(ev){
 function highlightNode(id){
   highlightedId = id; neighborNodes = new Set([id]); incidentTris = new Set();
   data.edges.forEach(e=>{ if(e.source===id||e.target===id){ neighborNodes.add(e.source); neighborNodes.add(e.target);} });
-  data.triangles.forEach(t=>{ if(t.i===id||t.j===id||t.k===id) incidentTris.add(t); });
+  (data._trisByNode?.get(id) || []).forEach(t=>incidentTris.add(t));
   rebuild();
 }
 function soloTriangle(t){
@@ -1988,7 +2018,7 @@ function clearConceptLabels() {
 
 function showConceptImages(nodeIds, oddSet) {
   clearConceptLabels();
-  if (!thingsConcepts || !scene) return;
+  if (!thingsConcepts || !scene || alignnetConcepts) return;
 
   for (const id of nodeIds) {
     const concept = thingsConcepts[id + conceptIdxOffset];
