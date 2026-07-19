@@ -242,6 +242,7 @@
         "<i>a b odd_one_out</i>", a raw THINGS <b>.csv</b> (image1,image2,image3,choice,…), or a
         pre-aggregated entropy <b>.csv</b> — the pipeline runs in your browser.</div>
       <button id="loadFull" style="margin-top:10px">Load full THINGS dataset</button>
+      <button id="loadAlignnet" style="margin-top:6px">Load AligNET dataset</button>
       <button id="downloadD2" style="margin-top:8px">Download D2 + s1_star</button>
       <div class="hint" id="d2Status"></div>
     </div>
@@ -393,12 +394,14 @@ const tooltip = document.getElementById("tooltip");
 const $ = id => document.getElementById(id);
 let data, nodeById, scene, camera, renderer, labelRenderer, controls, raycaster;
 let thingsConcepts = null, thingsImages = null;
+let alignnetConcepts = null;
 let conceptLabels = [];
 let _pendingImgNodeIds = [], _pendingImgOddSet = new Set();
-// 0 for testset (node IDs 0-indexed), -1 for full THINGS (node IDs 1-indexed)
+// 0 for testset/alignnet (node IDs 0-indexed), -1 for full THINGS (1-indexed)
 let conceptIdxOffset = 0;
 
 function nodeName(id) {
+  if (alignnetConcepts) return alignnetConcepts[id] || String(id);
   if (!thingsConcepts) return String(id);
   const c = thingsConcepts[id + conceptIdxOffset];
   return c ? c.word : String(id);
@@ -1427,7 +1430,9 @@ function setData(raw){
   positionsDirty = false; pendingFit = false;
 
   const precomputed = !!(raw.meta && raw.meta.precomputed);
-  conceptIdxOffset = precomputed ? -1 : 0; // full THINGS: 1-indexed; testsets: 0-indexed
+  const isAlignnet = !!(raw.meta && raw.meta.dataset_type === "alignnet");
+  if (!isAlignnet) alignnetConcepts = null;
+  conceptIdxOffset = (precomputed && !isAlignnet) ? -1 : 0; // full THINGS: 1-indexed; others: 0-indexed
   data = raw;
   nodeById = new Map();
   data.nodes.forEach(n => { nodeById.set(n.id, n); n._r = 1.6 + Math.sqrt(n.n_triangles)*1.3; });
@@ -2080,6 +2085,7 @@ function bindControls(){
   $("recenter").addEventListener("click", resetView);
   $("fileInput").addEventListener("change", onFile);
   $("loadFull").addEventListener("click", loadFullDataset);
+  $("loadAlignnet").addEventListener("click", loadAlignnetDataset);
   $("downloadD2").addEventListener("click", generateD2);
 
   // Mobile: bottom-sheet panel toggle
@@ -2163,6 +2169,47 @@ function loadFullDataset(){
     })
     .catch(() => {
       $("dataStatus").innerHTML = `<b>output/full_graph.json</b> not found. Run <code>python3.12 precompute.py</code> first.`;
+    });
+}
+
+function loadAlignnetDataset(){
+  $("dataStatus").textContent = "Loading AligNET dataset …";
+  // load concept labels first, then the graph
+  fetch("data/alignnet_concepts.json")
+    .then(r => { if (!r.ok) throw new Error("no concepts"); return r.json(); })
+    .then(labels => { alignnetConcepts = labels; })
+    .catch(() => { alignnetConcepts = null; });
+
+  fetch("output/alignnet_graph.json.gz")
+    .then(r => { if (!r.ok) throw new Error("try plain"); return r.blob(); })
+    .then(blob => new Response(blob.stream().pipeThrough(new DecompressionStream("gzip"))).json())
+    .catch(() => fetch("output/alignnet_graph.json").then(r => { if (!r.ok) throw new Error("not found"); return r.json(); }))
+    .then(raw => {
+      $("dataStatus").textContent = "Expanding arrays …";
+      setTimeout(() => {
+        if (raw.triangles.length && Array.isArray(raw.triangles[0])){
+          raw.triangles = raw.triangles.map(t => ({
+            i:t[0], j:t[1], k:t[2], agreement:t[3], total_count:t[4],
+            p_i:t[5], p_j:t[6], p_k:t[7]
+          }));
+        }
+        if (raw.edges.length && Array.isArray(raw.edges[0])){
+          raw.edges = raw.edges.map(e => ({
+            source:e[0], target:e[1], similarity:e[2], s1_star:e[3]
+          }));
+        }
+        setData(raw);
+        animateStarted || animate();
+        const m = raw.meta || {};
+        const curlStr = m.curl_frac !== undefined ? ` · curl ${(m.curl_frac*100).toFixed(4)}% · harmonic ${((m.harmonic_frac||0)*100).toFixed(4)}%` : "";
+        $("dataStatus").innerHTML = `Loaded <b>AligNET dataset</b> — `
+          + `${raw.triangles.length.toLocaleString()} triangles, ${raw.nodes.length.toLocaleString()} nodes, `
+          + `${raw.edges.length.toLocaleString()} edges, ${(raw.tetrahedra||[]).length} tetrahedra. `
+          + `Gradient R² = ${((m.frac_explained||0)*100).toFixed(4)}%${curlStr}`;
+      }, 50);
+    })
+    .catch(() => {
+      $("dataStatus").innerHTML = `<b>output/alignnet_graph.json</b> not found. Run <code>python3.12 precompute_alignnet.py</code> first.`;
     });
 }
 
