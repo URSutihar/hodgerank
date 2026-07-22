@@ -1,0 +1,1161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Random Graph — Simplicial Complex Generator</title>
+<style>
+  :root {
+    --bg: #0a0c10; --panel: #13161d; --panel-2: #1a1e28;
+    --border: #2a2f3a; --text: #e2e6ee; --text-dim: #7a8494;
+    --accent: #f59e0b; --accent-glow: rgba(245,158,11,0.25);
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; overflow: hidden;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    background: var(--bg); color: var(--text); }
+  #app { display: flex; height: 100vh; }
+
+  #sidebar { width: 320px; flex-shrink: 0; background: var(--panel);
+    border-right: 1px solid var(--border); padding: 24px 20px;
+    display: flex; flex-direction: column; gap: 20px; overflow-y: auto; }
+
+  .logo { font-size: 11px; letter-spacing: 3px; text-transform: uppercase;
+    color: var(--accent); font-weight: 700; }
+  .logo span { color: var(--text-dim); font-weight: 400; }
+
+  h2 { font-size: 13px; font-weight: 600; color: var(--text);
+    border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label { font-size: 11px; color: var(--text-dim); letter-spacing: 0.5px; }
+  .field input[type="range"] { width: 100%; accent-color: var(--accent); }
+  .field .row { display: flex; align-items: center; gap: 10px; }
+  .field .val-input { font-size: 13px; color: var(--accent); font-weight: 700;
+    width: 52px; text-align: right; background: var(--panel-2);
+    border: 1px solid var(--border); border-radius: 4px; padding: 3px 6px;
+    font-family: inherit; outline: none; }
+  .field .val-input:focus { border-color: var(--accent); }
+
+  .btn { width: 100%; padding: 12px; border: none; border-radius: 8px;
+    font-size: 13px; font-weight: 700; cursor: pointer;
+    letter-spacing: 1px; text-transform: uppercase; transition: all 0.2s; }
+  .btn-primary { background: var(--accent); color: #1a1205;
+    box-shadow: 0 0 20px var(--accent-glow); }
+  .btn-primary:hover { filter: brightness(1.1);
+    box-shadow: 0 0 30px var(--accent-glow); }
+  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; filter: none; }
+  .btn-secondary { background: var(--panel-2); color: var(--text-dim);
+    border: 1px solid var(--border); }
+  .btn-secondary:hover { border-color: var(--accent); color: var(--text); }
+
+  #stats { background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px; font-size: 11px; line-height: 1.8; }
+  #stats .stat-row { display: flex; justify-content: space-between; }
+  #stats .stat-val { color: var(--accent); font-weight: 700; }
+
+  #phase-label { text-align: center; font-size: 11px; color: var(--text-dim);
+    letter-spacing: 1px; min-height: 16px; }
+
+  .progress-bar { width: 100%; height: 3px; background: var(--panel-2);
+    border-radius: 2px; overflow: hidden; }
+  .progress-fill { height: 100%; width: 0%; background: var(--accent);
+    transition: width 0.3s ease; }
+
+  #canvas-wrap { flex: 1; position: relative; overflow: hidden; background: var(--bg); }
+  #canvas-wrap canvas { display: block; width: 100%; height: 100%; }
+
+  #view-tabs { position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 2px; z-index: 10; background: var(--panel);
+    border-radius: 6px; padding: 2px; border: 1px solid var(--border); }
+  .tab { padding: 6px 14px; border: none; background: transparent;
+    color: var(--text-dim); font-size: 11px; font-family: inherit;
+    cursor: pointer; border-radius: 4px; font-weight: 600;
+    letter-spacing: 0.5px; transition: all 0.15s; }
+  .tab.active { background: var(--accent); color: #1a1205; }
+  .tab:hover:not(.active) { color: var(--text); }
+
+  #butterfly-status { font-size: 11px; color: var(--text-dim); text-align: center;
+    min-height: 16px; margin-top: 6px; }
+
+  .info-row { font-size: 10px; color: var(--text-dim); line-height: 1.6; }
+
+  @media (max-width: 768px) {
+    #sidebar { width: 100%; height: auto; max-height: 40vh; border-right: none;
+      border-bottom: 1px solid var(--border); }
+    #app { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="sidebar">
+    <div class="logo">HODGERANK <span>/ random graph</span></div>
+
+    <h2>Parameters</h2>
+
+    <div class="field">
+      <label>N — Number of Vertices</label>
+      <div class="row">
+        <input type="range" id="sliderN" min="4" max="200" value="20">
+        <input type="text" class="val-input" id="inputN" value="20">
+      </div>
+    </div>
+
+    <div class="field">
+      <label>p — Edge Probability</label>
+      <div class="row">
+        <input type="range" id="sliderP" min="0" max="100" value="16" step="1">
+        <input type="text" class="val-input" id="inputP" value="0.16">
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Animation Speed</label>
+      <div class="row">
+        <input type="range" id="sliderSpeed" min="1" max="10" value="5">
+        <input type="text" class="val-input" id="inputSpeed" value="5">
+      </div>
+    </div>
+
+    <button class="btn btn-primary" id="btnGenerate">Generate Graph</button>
+
+    <div id="phase-label"></div>
+    <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+
+    <h2>Statistics</h2>
+    <div id="stats">
+      <div class="stat-row"><span>Vertices (0-simplices)</span><span class="stat-val" id="statV">—</span></div>
+      <div class="stat-row"><span>Edges (1-simplices)</span><span class="stat-val" id="statE">—</span></div>
+      <div class="stat-row"><span>Triangles (2-simplices)</span><span class="stat-val" id="statT">—</span></div>
+      <div class="stat-row"><span>Euler Characteristic</span><span class="stat-val" id="statChi">—</span></div>
+      <div class="stat-row"><span>Connected Components</span><span class="stat-val" id="statCC">—</span></div>
+    </div>
+
+    <button class="btn btn-secondary" id="btnReset">Reset View</button>
+
+    <h2>Hofstadter Butterfly</h2>
+
+    <div class="field">
+      <label>B_max — Max Magnetic Field</label>
+      <div class="row">
+        <input type="range" id="sliderBmax" min="5" max="200" value="50">
+        <input type="text" class="val-input" id="inputBmax" value="50">
+      </div>
+    </div>
+
+    <div class="field">
+      <label>B Steps — Resolution</label>
+      <div class="row">
+        <input type="range" id="sliderNB" min="50" max="500" value="200">
+        <input type="text" class="val-input" id="inputNB" value="200">
+      </div>
+    </div>
+
+    <button class="btn btn-primary" id="btnButterfly" disabled>Compute Butterfly</button>
+    <div class="progress-bar"><div class="progress-fill" id="butterflyProgress"></div></div>
+    <div id="butterfly-status"></div>
+
+    <div class="info-row">
+      Erdős–Rényi model G(n,p). Spectral analysis uses the largest connected component.
+      Hofstadter butterfly: eigenvalues of the magnetic Laplacian vs field strength B.
+      Drag to rotate · Scroll to zoom.
+    </div>
+  </div>
+
+  <div id="canvas-wrap">
+    <div id="view-tabs">
+      <button class="tab active" data-view="graph">3D Graph</button>
+      <button class="tab" data-view="spectrum">Spectrum</button>
+      <button class="tab" data-view="butterfly">Butterfly</button>
+    </div>
+    <canvas id="graphCanvas"></canvas>
+  </div>
+</div>
+
+<script>
+(function() {
+  // ═══ DOM REFS ═══
+  var sliderN = document.getElementById('sliderN');
+  var sliderP = document.getElementById('sliderP');
+  var sliderSpeed = document.getElementById('sliderSpeed');
+  var inputN = document.getElementById('inputN');
+  var inputP = document.getElementById('inputP');
+  var inputSpeed = document.getElementById('inputSpeed');
+  var btnGenerate = document.getElementById('btnGenerate');
+  var btnReset = document.getElementById('btnReset');
+  var phaseLabel = document.getElementById('phase-label');
+  var progressFill = document.getElementById('progressFill');
+  var canvas = document.getElementById('graphCanvas');
+  var ctx = canvas.getContext('2d');
+  var container = document.getElementById('canvas-wrap');
+  var sliderBmax = document.getElementById('sliderBmax');
+  var sliderNB = document.getElementById('sliderNB');
+  var inputBmax = document.getElementById('inputBmax');
+  var inputNB = document.getElementById('inputNB');
+  var btnButterfly = document.getElementById('btnButterfly');
+  var butterflyProgress = document.getElementById('butterflyProgress');
+  var butterflyStatus = document.getElementById('butterfly-status');
+  var tabButtons = document.querySelectorAll('.tab');
+
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+  // ═══ INPUT SYNC ═══
+  sliderN.oninput = function() { inputN.value = sliderN.value; };
+  inputN.onchange = function() {
+    var v = clamp(parseInt(inputN.value) || 4, 4, 500);
+    inputN.value = v; sliderN.value = Math.min(v, 200);
+  };
+  sliderP.oninput = function() { inputP.value = (sliderP.value / 100).toFixed(2); };
+  inputP.onchange = function() {
+    var v = clamp(parseFloat(inputP.value) || 0, 0, 1);
+    inputP.value = v.toFixed(2); sliderP.value = Math.round(v * 100);
+  };
+  sliderSpeed.oninput = function() { inputSpeed.value = sliderSpeed.value; };
+  inputSpeed.onchange = function() {
+    var v = clamp(parseInt(inputSpeed.value) || 1, 1, 10);
+    inputSpeed.value = v; sliderSpeed.value = v;
+  };
+  sliderBmax.oninput = function() { inputBmax.value = sliderBmax.value; };
+  inputBmax.onchange = function() {
+    var v = clamp(parseInt(inputBmax.value) || 5, 1, 500);
+    inputBmax.value = v; sliderBmax.value = clamp(v, 5, 200);
+  };
+  sliderNB.oninput = function() { inputNB.value = sliderNB.value; };
+  inputNB.onchange = function() {
+    var v = clamp(parseInt(inputNB.value) || 50, 10, 1000);
+    inputNB.value = v; sliderNB.value = clamp(v, 50, 500);
+  };
+
+  // ═══ CANVAS SIZING ═══
+  var W, H, dpr;
+  function resizeCanvas() {
+    dpr = window.devicePixelRatio || 1;
+    W = container.clientWidth;
+    H = container.clientHeight;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
+
+  // ═══ VIEW MANAGEMENT ═══
+  var activeView = 'graph';
+  tabButtons.forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      activeView = btn.getAttribute('data-view');
+      tabButtons.forEach(function(b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+    });
+  });
+
+  // ═══ 3D CAMERA ═══
+  var camRotX = -0.3, camRotY = 0.5, camDist = 5;
+  var autoRotate = true, autoRotSpeed = 0.003;
+  var dragging = false, lastMX, lastMY;
+
+  canvas.addEventListener('mousedown', function(e) {
+    if (activeView !== 'graph') return;
+    dragging = true; lastMX = e.clientX; lastMY = e.clientY;
+    autoRotate = false;
+  });
+  window.addEventListener('mousemove', function(e) {
+    if (!dragging || activeView !== 'graph') return;
+    camRotY += (e.clientX - lastMX) * 0.008;
+    camRotX -= (e.clientY - lastMY) * 0.008;
+    lastMX = e.clientX; lastMY = e.clientY;
+  });
+  window.addEventListener('mouseup', function() { dragging = false; });
+  canvas.addEventListener('wheel', function(e) {
+    if (activeView !== 'graph') return;
+    e.preventDefault();
+    camDist *= e.deltaY > 0 ? 0.92 : 1.08;
+    camDist = clamp(camDist, 1.5, 30);
+  }, { passive: false });
+
+  var touchStartDist = 0, touchStartCamDist = 0;
+  canvas.addEventListener('touchstart', function(e) {
+    if (activeView !== 'graph') return;
+    if (e.touches.length === 1) {
+      dragging = true; lastMX = e.touches[0].clientX; lastMY = e.touches[0].clientY;
+      autoRotate = false;
+    } else if (e.touches.length === 2) {
+      var dx = e.touches[0].clientX - e.touches[1].clientX;
+      var dy = e.touches[0].clientY - e.touches[1].clientY;
+      touchStartDist = Math.sqrt(dx*dx + dy*dy);
+      touchStartCamDist = camDist;
+    }
+    e.preventDefault();
+  }, { passive: false });
+  canvas.addEventListener('touchmove', function(e) {
+    if (activeView !== 'graph') return;
+    if (e.touches.length === 1 && dragging) {
+      var tx = e.touches[0].clientX, ty = e.touches[0].clientY;
+      camRotY += (tx - lastMX) * 0.008;
+      camRotX -= (ty - lastMY) * 0.008;
+      lastMX = tx; lastMY = ty;
+    } else if (e.touches.length === 2) {
+      var dx = e.touches[0].clientX - e.touches[1].clientX;
+      var dy = e.touches[0].clientY - e.touches[1].clientY;
+      var d = Math.sqrt(dx*dx + dy*dy);
+      camDist = clamp(touchStartCamDist * (touchStartDist / d), 1.5, 30);
+    }
+    e.preventDefault();
+  }, { passive: false });
+  canvas.addEventListener('touchend', function() { dragging = false; });
+
+  // ═══ 3D MATH ═══
+  function project(x, y, z) {
+    var cosY = Math.cos(camRotY), sinY = Math.sin(camRotY);
+    var cosX = Math.cos(camRotX), sinX = Math.sin(camRotX);
+    var x1 = x * cosY - z * sinY;
+    var z1 = x * sinY + z * cosY;
+    var y1 = y * cosX - z1 * sinX;
+    var z2 = y * sinX + z1 * cosX;
+    var perspective = camDist / (camDist + z2 + 2);
+    return {
+      sx: W / 2 + x1 * perspective * W * 0.35,
+      sy: H / 2 - y1 * perspective * W * 0.35,
+      depth: z2, scale: perspective
+    };
+  }
+
+  // ═══ GRAPH STATE ═══
+  var vertices = [], edges = [], triangles = [];
+  var phase = 0, vertexReveal = 0, edgeReveal = 0, triReveal = 0;
+  var edgeAlphas = [], triAlpha = 0, vertexFlash = [];
+  var isAnimating = false, animStartTime = 0;
+  var speed = 5, phaseStartTime = 0;
+  var currentN = 0, currentP = 0;
+
+  // ═══ SPECTRAL STATE ═══
+  var specEigenvalues = null;  // Float64Array — Laplacian eigenvalues
+  var specV2 = null, specV3 = null; // spectral embedding
+  var specCCn = 0;              // CC vertex count
+  var specCCedges = [];         // CC edge list
+  var butterflyData = null;     // { B: [], eigenvalues: [] }
+  var butterflyComputing = false;
+  var butterflyCancelToken = { cancelled: false };
+
+  function setPhase(text) { phaseLabel.textContent = text; }
+  function setProgress(pct) { progressFill.style.width = pct + '%'; }
+
+  // ═══ GRAPH GENERATION ═══
+  function generatePositions(n) {
+    var positions = [];
+    var phi = (1 + Math.sqrt(5)) / 2;
+    for (var i = 0; i < n; i++) {
+      var y = 1 - (2 * i) / (n - 1 || 1);
+      var r = Math.sqrt(Math.max(0, 1 - y * y));
+      var theta = 2 * Math.PI * i / phi;
+      positions.push({ x: r * Math.cos(theta), y: y, z: r * Math.sin(theta) });
+    }
+    return positions;
+  }
+
+  function generateEdges(n, p) {
+    var e = [];
+    for (var i = 0; i < n; i++)
+      for (var j = i + 1; j < n; j++)
+        if (Math.random() < p) e.push([i, j]);
+    return e;
+  }
+
+  function findTriangles(n, edgeList) {
+    var adj = {}, neighbors = [];
+    for (var i = 0; i < n; i++) neighbors.push([]);
+    for (var e = 0; e < edgeList.length; e++) {
+      var a = edgeList[e][0], b = edgeList[e][1];
+      adj[a + ',' + b] = true; adj[b + ',' + a] = true;
+      neighbors[a].push(b); neighbors[b].push(a);
+    }
+    var tris = [];
+    for (var i = 0; i < n; i++)
+      for (var ji = 0; ji < neighbors[i].length; ji++) {
+        var j = neighbors[i][ji];
+        if (j <= i) continue;
+        for (var ki = 0; ki < neighbors[j].length; ki++) {
+          var k = neighbors[j][ki];
+          if (k <= j && adj[i + ',' + k]) tris.push([i, j, k]);
+        }
+      }
+    return tris;
+  }
+
+  function connectedComponents(n, edgeList) {
+    var parent = [];
+    for (var i = 0; i < n; i++) parent.push(i);
+    function find(x) { return parent[x] === x ? x : (parent[x] = find(parent[x])); }
+    for (var e = 0; e < edgeList.length; e++) {
+      var ra = find(edgeList[e][0]), rb = find(edgeList[e][1]);
+      if (ra !== rb) parent[ra] = rb;
+    }
+    var s = {};
+    for (var i = 0; i < n; i++) s[find(i)] = true;
+    return Object.keys(s).length;
+  }
+
+  function largestCC(n, edgeList) {
+    var parent = new Int32Array(n);
+    for (var i = 0; i < n; i++) parent[i] = i;
+    function find(x) { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
+    for (var e = 0; e < edgeList.length; e++) {
+      var ra = find(edgeList[e][0]), rb = find(edgeList[e][1]);
+      if (ra !== rb) parent[ra] = rb;
+    }
+    var counts = {};
+    for (var i = 0; i < n; i++) { var r = find(i); counts[r] = (counts[r] || 0) + 1; }
+    var maxRoot = 0, maxCount = 0;
+    for (var r in counts) if (counts[r] > maxCount) { maxCount = counts[r]; maxRoot = parseInt(r); }
+    var nodes = [], remap = {};
+    for (var i = 0; i < n; i++) if (find(i) === maxRoot) { remap[i] = nodes.length; nodes.push(i); }
+    var newEdges = [];
+    for (var e = 0; e < edgeList.length; e++) {
+      var a = edgeList[e][0], b = edgeList[e][1];
+      if (remap[a] !== undefined && remap[b] !== undefined)
+        newEdges.push([remap[a], remap[b]]);
+    }
+    return { n: nodes.length, edges: newEdges };
+  }
+
+  function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+
+  // ═══ LINEAR ALGEBRA ═══
+
+  // Jacobi eigensolver for real symmetric matrix (with eigenvectors)
+  function symmetricEigen(flatA, n) {
+    var a = new Float64Array(flatA);
+    var v = new Float64Array(n * n);
+    for (var i = 0; i < n; i++) v[i * n + i] = 1;
+    var d = new Float64Array(n), b = new Float64Array(n), z = new Float64Array(n);
+    for (var i = 0; i < n; i++) { d[i] = a[i * n + i]; b[i] = d[i]; }
+
+    for (var iter = 0; iter < 80; iter++) {
+      var sm = 0;
+      for (var p = 0; p < n - 1; p++)
+        for (var q = p + 1; q < n; q++) sm += Math.abs(a[p * n + q]);
+      if (sm < 1e-15) break;
+      var thresh = iter < 4 ? 0.2 * sm / (n * n) : 0;
+
+      for (var p = 0; p < n - 1; p++) {
+        for (var q = p + 1; q < n; q++) {
+          var g = 100 * Math.abs(a[p * n + q]);
+          if (iter > 4 && g <= Number.EPSILON * Math.abs(d[p]) && g <= Number.EPSILON * Math.abs(d[q])) {
+            a[p * n + q] = 0;
+          } else if (Math.abs(a[p * n + q]) > thresh) {
+            var h = d[q] - d[p], t;
+            if (g <= Number.EPSILON * Math.abs(h)) t = a[p * n + q] / h;
+            else {
+              var theta = 0.5 * h / a[p * n + q];
+              t = 1 / (Math.abs(theta) + Math.sqrt(1 + theta * theta));
+              if (theta < 0) t = -t;
+            }
+            var c = 1 / Math.sqrt(1 + t * t), s = t * c, tau = s / (1 + c);
+            h = t * a[p * n + q];
+            z[p] -= h; z[q] += h; d[p] -= h; d[q] += h;
+            a[p * n + q] = 0;
+            for (var j = 0; j < p; j++) {
+              var g1 = a[j*n+p], h1 = a[j*n+q];
+              a[j*n+p] = g1 - s*(h1 + g1*tau); a[j*n+q] = h1 + s*(g1 - h1*tau);
+            }
+            for (var j = p+1; j < q; j++) {
+              var g1 = a[p*n+j], h1 = a[j*n+q];
+              a[p*n+j] = g1 - s*(h1 + g1*tau); a[j*n+q] = h1 + s*(g1 - h1*tau);
+            }
+            for (var j = q+1; j < n; j++) {
+              var g1 = a[p*n+j], h1 = a[q*n+j];
+              a[p*n+j] = g1 - s*(h1 + g1*tau); a[q*n+j] = h1 + s*(g1 - h1*tau);
+            }
+            for (var j = 0; j < n; j++) {
+              var g1 = v[j*n+p], h1 = v[j*n+q];
+              v[j*n+p] = g1 - s*(h1 + g1*tau); v[j*n+q] = h1 + s*(g1 - h1*tau);
+            }
+          }
+        }
+      }
+      for (var i = 0; i < n; i++) { b[i] += z[i]; d[i] = b[i]; z[i] = 0; }
+    }
+    var idx = []; for (var i = 0; i < n; i++) idx.push(i);
+    idx.sort(function(a, b) { return d[a] - d[b]; });
+    var sv = new Float64Array(n), svec = new Float64Array(n * n);
+    for (var i = 0; i < n; i++) {
+      sv[i] = d[idx[i]];
+      for (var j = 0; j < n; j++) svec[j * n + i] = v[j * n + idx[i]];
+    }
+    return { values: sv, vectors: svec };
+  }
+
+  // Hermitian eigenvalues via Householder tridiagonalization + QR iteration
+  // Pre-allocated workspace (created once, reused across calls)
+  var _herm_max = 0, _herm_re, _herm_im, _herm_vr, _herm_vi, _herm_wr, _herm_wi;
+  function hermEigVals(n, Are, Aim) {
+    if (n <= 1) return n > 0 ? [Are[0]] : [];
+    if (n === 2) {
+      var a = Are[0], dd = Are[3], br = Are[1], bi = Aim[1];
+      var tr = a + dd, disc = Math.sqrt(Math.max(0, (a-dd)*(a-dd) + 4*(br*br+bi*bi)));
+      return [(tr-disc)/2, (tr+disc)/2];
+    }
+    var nn = n * n;
+    if (n > _herm_max) {
+      _herm_max = n;
+      _herm_re = new Float64Array(nn);
+      _herm_im = new Float64Array(nn);
+      _herm_vr = new Float64Array(n);
+      _herm_vi = new Float64Array(n);
+      _herm_wr = new Float64Array(n);
+      _herm_wi = new Float64Array(n);
+    }
+    var re = _herm_re, im = _herm_im;
+    for (var i = 0; i < nn; i++) { re[i] = Are[i]; im[i] = Aim[i]; }
+    var vr = _herm_vr, vi = _herm_vi, wr = _herm_wr, wi = _herm_wi;
+
+    // Householder tridiagonalization → real tridiagonal (d, e)
+    var d = new Float64Array(n), e = new Float64Array(n);
+    for (var k = 0; k < n - 2; k++) {
+      var m = n - k - 1, base = k + 1;
+      var xnorm2 = 0;
+      for (var i = 0; i < m; i++) {
+        var idx = (base+i)*n+k;
+        xnorm2 += re[idx]*re[idx] + im[idx]*im[idx];
+      }
+      if (xnorm2 < 1e-30) { e[k] = 0; continue; }
+      var xnorm = Math.sqrt(xnorm2);
+
+      var x0r = re[base*n+k], x0i = im[base*n+k];
+      var x0mag = Math.sqrt(x0r*x0r + x0i*x0i);
+      var alphaR, alphaI;
+      if (x0mag > 1e-15) { alphaR = -xnorm*x0r/x0mag; alphaI = -xnorm*x0i/x0mag; }
+      else { alphaR = -xnorm; alphaI = 0; }
+      e[k] = xnorm;
+
+      for (var i = 0; i < m; i++) { var idx=(base+i)*n+k; vr[i] = re[idx]; vi[i] = im[idx]; }
+      vr[0] -= alphaR; vi[0] -= alphaI;
+      var vnorm2 = 0;
+      for (var i = 0; i < m; i++) vnorm2 += vr[i]*vr[i] + vi[i]*vi[i];
+      if (vnorm2 < 1e-30) continue;
+      var tau = 2 / vnorm2;
+
+      // w = tau * A_sub * v
+      for (var i = 0; i < m; i++) {
+        var sr = 0, si = 0, row = (base+i)*n+base;
+        for (var j = 0; j < m; j++) {
+          sr += re[row+j]*vr[j] - im[row+j]*vi[j];
+          si += re[row+j]*vi[j] + im[row+j]*vr[j];
+        }
+        wr[i] = tau*sr; wi[i] = tau*si;
+      }
+      // q = w - (tau/2)(v†w)v
+      var dotR = 0, dotI = 0;
+      for (var i = 0; i < m; i++) { dotR += vr[i]*wr[i]+vi[i]*wi[i]; dotI += vr[i]*wi[i]-vi[i]*wr[i]; }
+      var scR = tau*0.5*dotR, scI = tau*0.5*dotI;
+      for (var i = 0; i < m; i++) {
+        wr[i] -= scR*vr[i]-scI*vi[i]; wi[i] -= scR*vi[i]+scI*vr[i];
+      }
+      // A_sub -= v*q† + q*v†  (q is now in wr,wi)
+      for (var i = 0; i < m; i++) {
+        var row = (base+i)*n+base;
+        var vri = vr[i], vii = vi[i], wri = wr[i], wii = wi[i];
+        for (var j = 0; j < m; j++) {
+          re[row+j] -= vri*wr[j]+vii*wi[j] + wri*vr[j]+wii*vi[j];
+          im[row+j] -= vii*wr[j]-vri*wi[j] + wii*vr[j]-wri*vi[j];
+        }
+      }
+    }
+
+    for (var i = 0; i < n; i++) d[i] = re[i*n+i];
+    if (n >= 2) {
+      var idx = (n-1)*n+(n-2);
+      e[n-2] = Math.sqrt(re[idx]*re[idx] + im[idx]*im[idx]);
+    }
+
+    // Symmetric tridiagonal QR (implicit Wilkinson shift)
+    for (var l = 0; l < n; l++) {
+      for (var iter = 0; iter < 200; iter++) {
+        var mm = l;
+        while (mm < n-1) {
+          if (Math.abs(e[mm]) <= 1e-14 * (Math.abs(d[mm]) + Math.abs(d[mm+1]))) break;
+          mm++;
+        }
+        if (mm === l) break;
+        var g = (d[l+1] - d[l]) / (2*e[l]);
+        var r = Math.sqrt(g*g+1);
+        g = d[mm] - d[l] + e[l]/(g + (g >= 0 ? r : -r));
+        var ss = 1, cc = 1, p = 0, converged = true;
+        for (var i = mm-1; i >= l; i--) {
+          var f = ss*e[i], b = cc*e[i];
+          r = Math.sqrt(f*f+g*g);
+          e[i+1] = r;
+          if (r < 1e-30) { d[i+1] -= p; e[mm] = 0; converged = false; break; }
+          ss = f/r; cc = g/r; g = d[i+1]-p;
+          r = (d[i]-g)*ss + 2*cc*b; p = ss*r; d[i+1] = g+p; g = cc*r-b;
+        }
+        if (!converged) continue;
+        d[l] -= p; e[l] = g; e[mm] = 0;
+      }
+    }
+    d.sort();
+    return d;
+  }
+
+  // ═══ SPECTRAL ANALYSIS ═══
+
+  function buildLaplacian(n, edgeList) {
+    var L = new Float64Array(n * n);
+    for (var e = 0; e < edgeList.length; e++) {
+      var a = edgeList[e][0], b = edgeList[e][1];
+      L[a*n+b] = -1; L[b*n+a] = -1;
+      L[a*n+a] += 1; L[b*n+b] += 1;
+    }
+    return L;
+  }
+
+  function computeSpectralData() {
+    var cc = largestCC(currentN, edges);
+    specCCn = cc.n;
+    specCCedges = cc.edges;
+    specEigenvalues = null; specV2 = null; specV3 = null;
+    butterflyData = null;
+
+    if (specCCn < 3) {
+      btnButterfly.disabled = true;
+      butterflyStatus.textContent = 'Need >= 3 connected vertices';
+      return;
+    }
+
+    var L = buildLaplacian(specCCn, specCCedges);
+    var eig = symmetricEigen(L, specCCn);
+    specEigenvalues = eig.values;
+
+    // Extract Fiedler vectors (columns 1, 2 of eigenvector matrix)
+    specV2 = new Float64Array(specCCn);
+    specV3 = new Float64Array(specCCn);
+    for (var i = 0; i < specCCn; i++) {
+      specV2[i] = eig.vectors[i * specCCn + 1];
+      specV3[i] = eig.vectors[i * specCCn + 2];
+    }
+    // Rescale to [-1, 1]
+    var max2 = 0, max3 = 0;
+    for (var i = 0; i < specCCn; i++) {
+      if (Math.abs(specV2[i]) > max2) max2 = Math.abs(specV2[i]);
+      if (Math.abs(specV3[i]) > max3) max3 = Math.abs(specV3[i]);
+    }
+    if (max2 > 0) for (var i = 0; i < specCCn; i++) specV2[i] /= max2;
+    if (max3 > 0) for (var i = 0; i < specCCn; i++) specV3[i] /= max3;
+
+    btnButterfly.disabled = false;
+    butterflyStatus.textContent = 'CC: ' + specCCn + ' vertices, ready';
+  }
+
+  function buildMagLap(n, edgeList, v2, v3, B) {
+    var Lr = new Float64Array(n * n);
+    var Li = new Float64Array(n * n);
+    for (var e = 0; e < edgeList.length; e++) {
+      var u = edgeList[e][0], w = edgeList[e][1];
+      var ph = B * (v3[w] - v3[u]) * (v2[w] + v2[u]) / 2;
+      var cp = Math.cos(ph), sp = Math.sin(ph);
+      Lr[u*n+w] = -cp; Li[u*n+w] = -sp;
+      Lr[w*n+u] = -cp; Li[w*n+u] = sp;
+      Lr[u*n+u] += 1; Lr[w*n+w] += 1;
+    }
+    return { re: Lr, im: Li };
+  }
+
+  function computeButterfly() {
+    if (!specV2 || !specV3 || butterflyComputing) return;
+    var n = specCCn;
+    if (n > 120) {
+      butterflyStatus.textContent = 'CC too large (' + n + '). Use N <= ~120.';
+      return;
+    }
+    var Bmax = clamp(parseFloat(inputBmax.value) || 50, 1, 500);
+    var nB = clamp(parseInt(inputNB.value) || 200, 10, 1000);
+
+    butterflyComputing = true;
+    btnButterfly.disabled = true;
+    renderPaused = true;
+    butterflyCancelToken = { cancelled: false };
+    var token = butterflyCancelToken;
+
+    var Bvals = [];
+    for (var i = 0; i < nB; i++) Bvals.push(i * Bmax / (nB - 1));
+    var allEigs = [];
+    var idx = 0;
+    butterflyStatus.textContent = 'Computing... 0/' + nB;
+    butterflyProgress.style.width = '0%';
+
+    // Pre-allocate magnetic Laplacian buffers
+    var nn = n * n;
+    var magRe = new Float64Array(nn), magIm = new Float64Array(nn);
+
+    function buildMagLapFast(B) {
+      magRe.fill(0); magIm.fill(0);
+      for (var e = 0; e < specCCedges.length; e++) {
+        var u = specCCedges[e][0], w = specCCedges[e][1];
+        var ph = B * (specV3[w] - specV3[u]) * (specV2[w] + specV2[u]) / 2;
+        var cp = Math.cos(ph), sp = Math.sin(ph);
+        magRe[u*n+w] = -cp; magIm[u*n+w] = -sp;
+        magRe[w*n+u] = -cp; magIm[w*n+u] = sp;
+        magRe[u*n+u] += 1; magRe[w*n+w] += 1;
+      }
+    }
+
+    var startTime = performance.now();
+
+    function chunk() {
+      if (token.cancelled) {
+        butterflyComputing = false;
+        btnButterfly.disabled = false;
+        renderPaused = false;
+        butterflyStatus.textContent = 'Cancelled';
+        return;
+      }
+      var end = Math.min(idx + 50, nB);
+      for (; idx < end; idx++) {
+        buildMagLapFast(Bvals[idx]);
+        allEigs.push(hermEigVals(n, magRe, magIm));
+      }
+      var elapsed = (performance.now() - startTime) / 1000;
+      var eta = idx > 0 ? elapsed / idx * (nB - idx) : 0;
+      butterflyProgress.style.width = (idx / nB * 100) + '%';
+      butterflyStatus.textContent = 'Computing... ' + idx + '/' + nB + ' (' + eta.toFixed(0) + 's remaining)';
+
+      if (idx < nB) {
+        setTimeout(chunk, 0);
+      } else {
+        butterflyData = { B: Bvals, eigenvalues: allEigs, n: n, p: currentP };
+        butterflyComputing = false;
+        btnButterfly.disabled = false;
+        renderPaused = false;
+        butterflyProgress.style.width = '100%';
+        butterflyStatus.textContent = 'Done (' + elapsed.toFixed(1) + 's). Switch to Butterfly tab.';
+        activeView = 'butterfly';
+        tabButtons.forEach(function(b) {
+          b.classList.toggle('active', b.getAttribute('data-view') === 'butterfly');
+        });
+      }
+    }
+    chunk();
+  }
+
+  // ═══ START GENERATION ═══
+  function startGeneration() {
+    if (isAnimating) return;
+    isAnimating = true;
+    btnGenerate.disabled = true;
+
+    currentN = clamp(parseInt(inputN.value) || 20, 4, 500);
+    currentP = clamp(parseFloat(inputP.value) || 0.3, 0, 1);
+    speed = clamp(parseInt(inputSpeed.value) || 5, 1, 10);
+    inputN.value = currentN;
+    inputP.value = currentP.toFixed(2);
+
+    // Cancel any running butterfly
+    butterflyCancelToken.cancelled = true;
+    butterflyComputing = false;
+    butterflyProgress.style.width = '0%';
+
+    var positions = generatePositions(currentN);
+    edges = generateEdges(currentN, currentP);
+    triangles = findTriangles(currentN, edges);
+    var cc = connectedComponents(currentN, edges);
+
+    document.getElementById('statV').textContent = currentN;
+    document.getElementById('statE').textContent = edges.length;
+    document.getElementById('statT').textContent = triangles.length;
+    document.getElementById('statChi').textContent = currentN - edges.length + triangles.length;
+    document.getElementById('statCC').textContent = cc;
+
+    vertices = []; vertexFlash = [];
+    for (var i = 0; i < currentN; i++) {
+      vertices.push({
+        tx: positions[i].x, ty: positions[i].y, tz: positions[i].z,
+        cx: 0, cy: 0, cz: 0, alpha: 0, scale: 0, born: -1
+      });
+      vertexFlash.push(0);
+    }
+
+    edgeAlphas = [];
+    for (var i = 0; i < edges.length; i++) edgeAlphas.push(0);
+    triAlpha = 0;
+
+    camDist = 3.5; camRotX = -0.3; camRotY = 0.5; autoRotate = true;
+    vertexReveal = 0; edgeReveal = 0; triReveal = 0;
+    phase = 1; animStartTime = performance.now(); phaseStartTime = animStartTime;
+    setPhase('Phase 1 / 3 — Seeding vertices');
+    setProgress(0);
+
+    // Compute spectral data
+    setTimeout(function() { computeSpectralData(); }, 10);
+
+    // Switch to graph view
+    activeView = 'graph';
+    tabButtons.forEach(function(b) {
+      b.classList.toggle('active', b.getAttribute('data-view') === 'graph');
+    });
+  }
+
+  // ═══ ANIMATION ENGINE ═══
+  function updateAnimation() {
+    var now = performance.now();
+    var N = vertices.length;
+    var baseInterval = Math.max(3, (100 - speed * 10));
+
+    if (phase === 1) {
+      var elapsed = now - phaseStartTime;
+      var targetReveal = Math.min(N, Math.floor(elapsed / baseInterval) + 1);
+      if (targetReveal > vertexReveal) vertexReveal = targetReveal;
+      for (var i = 0; i < vertexReveal; i++) {
+        var v = vertices[i];
+        if (v.born < 0) v.born = now;
+        var age = (now - v.born) / (600 / (speed * 0.6));
+        var t = clamp(age, 0, 1), e = easeOutCubic(t);
+        v.cx = v.tx * e; v.cy = v.ty * e; v.cz = v.tz * e;
+        v.alpha = clamp(t * 3, 0, 1); v.scale = e;
+      }
+      setProgress((vertexReveal / N) * 33);
+      if (vertexReveal >= N) {
+        var allDone = true;
+        for (var i = 0; i < N; i++) if (vertices[i].scale < 0.99) { allDone = false; break; }
+        if (allDone) { phase = 2; phaseStartTime = now; setPhase('Phase 2 / 3 — Forming edges'); }
+      }
+    }
+    if (phase === 2) {
+      var elapsed = now - phaseStartTime;
+      var interval = Math.max(2, baseInterval * 0.4);
+      var targetReveal = Math.min(edges.length, Math.floor(elapsed / interval) + 1);
+      if (targetReveal > edgeReveal) {
+        for (var i = edgeReveal; i < targetReveal; i++) {
+          vertexFlash[edges[i][0]] = 1; vertexFlash[edges[i][1]] = 1;
+        }
+        edgeReveal = targetReveal;
+      }
+      for (var i = 0; i < edgeReveal; i++) edgeAlphas[i] = clamp(edgeAlphas[i] + 0.06 * speed, 0, 0.6);
+      setProgress(33 + (edgeReveal / Math.max(1, edges.length)) * 34);
+      if (edgeReveal >= edges.length) {
+        var allEdgesDone = true;
+        for (var i = 0; i < edges.length; i++) if (edgeAlphas[i] < 0.59) { allEdgesDone = false; break; }
+        if (allEdgesDone || edges.length === 0) { phase = 3; phaseStartTime = now; setPhase('Phase 3 / 3 — Filling 2-simplices'); }
+      }
+    }
+    if (phase === 3) {
+      if (triangles.length === 0) { phase = 4; }
+      else {
+        var elapsed = now - phaseStartTime;
+        var interval = Math.max(3, baseInterval * 0.5);
+        var targetReveal = Math.min(triangles.length, Math.floor(elapsed / interval) + 1);
+        if (targetReveal > triReveal) {
+          for (var i = triReveal; i < targetReveal; i++) {
+            vertexFlash[triangles[i][0]] = 1; vertexFlash[triangles[i][1]] = 1; vertexFlash[triangles[i][2]] = 1;
+          }
+          triReveal = targetReveal;
+        }
+        triAlpha = clamp(triAlpha + 0.02 * speed, 0, 0.22);
+        setProgress(67 + (triReveal / triangles.length) * 33);
+        if (triReveal >= triangles.length && triAlpha >= 0.21) phase = 4;
+      }
+    }
+    if (phase === 4) {
+      setProgress(100); setPhase('Complete');
+      phase = 5; isAnimating = false; btnGenerate.disabled = false;
+      setTimeout(function() { setPhase(''); setProgress(0); }, 1200);
+    }
+    for (var i = 0; i < vertexFlash.length; i++) vertexFlash[i] *= 0.9;
+    if (autoRotate && !dragging) camRotY += autoRotSpeed;
+    if (phase === 5) { var t = performance.now() * 0.001; triAlpha = 0.18 + Math.sin(t * 1.5) * 0.05; }
+  }
+
+  // ═══ 3D GRAPH RENDERING ═══
+  function renderGraph() {
+    if (phase === 0) {
+      ctx.clearRect(0, 0, W, H);
+      ctx.fillStyle = '#7a8494'; ctx.font = '12px monospace'; ctx.textAlign = 'center';
+      ctx.fillText('Set parameters and hit Generate', W / 2, H / 2);
+      return;
+    }
+    updateAnimation();
+    ctx.clearRect(0, 0, W, H);
+    var N = vertices.length;
+    var projected = [];
+    for (var i = 0; i < N; i++) { var v = vertices[i]; projected.push(project(v.cx, v.cy, v.cz)); }
+
+    // Triangles
+    if (triReveal > 0) {
+      var triOrder = [];
+      for (var i = 0; i < triReveal; i++) {
+        var a = triangles[i][0], b = triangles[i][1], c = triangles[i][2];
+        triOrder.push({ idx: i, depth: (projected[a].depth + projected[b].depth + projected[c].depth) / 3 });
+      }
+      triOrder.sort(function(a, b) { return b.depth - a.depth; });
+      for (var ti = 0; ti < triOrder.length; ti++) {
+        var tri = triangles[triOrder[ti].idx];
+        var pa = projected[tri[0]], pb = projected[tri[1]], pc = projected[tri[2]];
+        ctx.beginPath(); ctx.moveTo(pa.sx, pa.sy); ctx.lineTo(pb.sx, pb.sy); ctx.lineTo(pc.sx, pc.sy); ctx.closePath();
+        ctx.fillStyle = 'rgba(74,158,255,' + triAlpha.toFixed(3) + ')'; ctx.fill();
+        ctx.strokeStyle = 'rgba(74,158,255,' + (triAlpha * 1.5).toFixed(3) + ')'; ctx.lineWidth = 0.5; ctx.stroke();
+      }
+    }
+    // Edges
+    if (edgeReveal > 0) {
+      var edgeOrder = [];
+      for (var i = 0; i < edgeReveal; i++) {
+        var a = edges[i][0], b = edges[i][1];
+        edgeOrder.push({ idx: i, depth: (projected[a].depth + projected[b].depth) / 2 });
+      }
+      edgeOrder.sort(function(a, b) { return b.depth - a.depth; });
+      for (var ei = 0; ei < edgeOrder.length; ei++) {
+        var edge = edges[edgeOrder[ei].idx], alpha = edgeAlphas[edgeOrder[ei].idx];
+        var pa = projected[edge[0]], pb = projected[edge[1]];
+        ctx.beginPath(); ctx.moveTo(pa.sx, pa.sy); ctx.lineTo(pb.sx, pb.sy);
+        ctx.strokeStyle = 'rgba(74,158,255,' + alpha.toFixed(3) + ')';
+        ctx.lineWidth = Math.max(0.5, 1.2 * pa.scale); ctx.stroke();
+      }
+    }
+    // Vertices
+    var vertOrder = [];
+    for (var i = 0; i < vertexReveal && i < N; i++) vertOrder.push({ idx: i, depth: projected[i].depth });
+    vertOrder.sort(function(a, b) { return b.depth - a.depth; });
+    var baseR = clamp(4 - N * 0.015, 1.5, 4);
+    for (var vi = 0; vi < vertOrder.length; vi++) {
+      var i = vertOrder[vi].idx, v = vertices[i], p = projected[i];
+      var r = baseR * v.scale * p.scale, flash = vertexFlash[i];
+      if (flash > 0.05) {
+        var grad = ctx.createRadialGradient(p.sx, p.sy, 0, p.sx, p.sy, r * 4);
+        grad.addColorStop(0, 'rgba(245,158,11,' + (flash * 0.5).toFixed(3) + ')');
+        grad.addColorStop(1, 'rgba(245,158,11,0)');
+        ctx.beginPath(); ctx.arc(p.sx, p.sy, r * 4, 0, Math.PI * 2); ctx.fillStyle = grad; ctx.fill();
+      }
+      ctx.beginPath(); ctx.arc(p.sx, p.sy, r, 0, Math.PI * 2);
+      var br = 0.85 + flash * 0.15;
+      ctx.fillStyle = 'rgba(' + Math.round(245*br) + ',' + Math.round((158+flash*97)*br) + ',' + Math.round(11*br) + ',' + v.alpha.toFixed(3) + ')';
+      ctx.fill();
+    }
+  }
+
+  // ═══ SPECTRUM PLOT ═══
+  function renderSpectrumView() {
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#0a0c10'; ctx.fillRect(0, 0, W, H);
+
+    if (!specEigenvalues) {
+      ctx.fillStyle = '#7a8494'; ctx.font = '13px monospace'; ctx.textAlign = 'center';
+      ctx.fillText('Generate a graph first to see the Laplacian spectrum', W / 2, H / 2);
+      return;
+    }
+    var eigs = specEigenvalues, n = eigs.length;
+
+    // Split view: eigenvalue plot (left 60%), spectral embedding (right 40%)
+    var splitX = Math.floor(W * 0.58);
+
+    // ── Left: Eigenvalue stem plot ──
+    var m = { top: 55, right: 20, bottom: 55, left: 70 };
+    var pw = splitX - m.left - m.right, ph = H - m.top - m.bottom;
+    ctx.fillStyle = '#13161d'; ctx.fillRect(m.left, m.top, pw, ph);
+
+    var ymin = 0, ymax = eigs[n - 1] * 1.1 || 1;
+    function mapX(k) { return m.left + (k / Math.max(1, n - 1)) * pw; }
+    function mapY(v) { return m.top + ph - ((v - ymin) / (ymax - ymin)) * ph; }
+
+    // Grid
+    ctx.strokeStyle = '#1e2230'; ctx.lineWidth = 0.5;
+    for (var i = 0; i <= 5; i++) {
+      var yv = ymin + (ymax - ymin) * i / 5, sy = mapY(yv);
+      ctx.beginPath(); ctx.moveTo(m.left, sy); ctx.lineTo(m.left + pw, sy); ctx.stroke();
+    }
+
+    // Stems
+    var barW = Math.max(1, pw / n * 0.7);
+    for (var k = 0; k < n; k++) {
+      var sx = mapX(k), sy = mapY(eigs[k]), sy0 = mapY(0);
+      ctx.fillStyle = 'rgba(74,158,255,0.7)';
+      ctx.fillRect(sx - barW/2, sy, barW, sy0 - sy);
+      if (n < 80) {
+        ctx.fillStyle = '#4a9eff'; ctx.beginPath();
+        ctx.arc(sx, sy, 2, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+
+    // Axes
+    ctx.strokeStyle = '#2a2f3a'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(m.left, m.top); ctx.lineTo(m.left, m.top + ph);
+    ctx.lineTo(m.left + pw, m.top + ph); ctx.stroke();
+
+    ctx.fillStyle = '#7a8494'; ctx.font = '10px monospace'; ctx.textAlign = 'right';
+    for (var i = 0; i <= 5; i++) {
+      var yv = ymin + (ymax - ymin) * i / 5;
+      ctx.fillText(yv.toFixed(1), m.left - 6, mapY(yv) + 3);
+    }
+    ctx.textAlign = 'center';
+    var nLbl = Math.min(8, n);
+    for (var i = 0; i <= nLbl; i++) {
+      var k = Math.round(i * (n - 1) / nLbl);
+      ctx.fillText(k.toString(), mapX(k), m.top + ph + 16);
+    }
+    ctx.fillStyle = '#e2e6ee'; ctx.font = '11px monospace';
+    ctx.fillText('Eigenvalue Index k', m.left + pw / 2, m.top + ph + 38);
+    ctx.save(); ctx.translate(16, m.top + ph / 2); ctx.rotate(-Math.PI / 2);
+    ctx.fillText('λ_k', 0, 0); ctx.restore();
+    ctx.fillStyle = '#f59e0b'; ctx.font = '13px monospace';
+    ctx.fillText('Laplacian Spectrum', m.left + pw / 2, 28);
+    ctx.fillStyle = '#7a8494'; ctx.font = '10px monospace';
+    ctx.fillText('(CC: ' + n + ' vertices)', m.left + pw / 2, 42);
+
+    // ── Right: Spectral embedding ──
+    if (specV2 && specV3) {
+      var rm = { top: 55, right: 30, bottom: 55, left: 20 };
+      var rx = splitX + rm.left, ry = rm.top;
+      var rw = W - splitX - rm.left - rm.right;
+      var rh = H - rm.top - rm.bottom;
+      var side = Math.min(rw, rh);
+      var ox = rx + (rw - side) / 2, oy = ry + (rh - side) / 2;
+
+      ctx.fillStyle = '#13161d'; ctx.fillRect(ox, oy, side, side);
+      ctx.strokeStyle = '#1e2230'; ctx.lineWidth = 0.5;
+      ctx.strokeRect(ox, oy, side, side);
+
+      function emX(v) { return ox + (v + 1) / 2 * side; }
+      function emY(v) { return oy + side - (v + 1) / 2 * side; }
+
+      // Edges
+      ctx.strokeStyle = 'rgba(74,158,255,0.2)'; ctx.lineWidth = 0.5;
+      for (var e = 0; e < specCCedges.length; e++) {
+        var a = specCCedges[e][0], b = specCCedges[e][1];
+        ctx.beginPath(); ctx.moveTo(emX(specV2[a]), emY(specV3[a]));
+        ctx.lineTo(emX(specV2[b]), emY(specV3[b])); ctx.stroke();
+      }
+      // Vertices
+      var dotR = clamp(4 - n * 0.02, 1.5, 4);
+      for (var i = 0; i < n; i++) {
+        ctx.fillStyle = '#f59e0b'; ctx.beginPath();
+        ctx.arc(emX(specV2[i]), emY(specV3[i]), dotR, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.fillStyle = '#f59e0b'; ctx.font = '13px monospace'; ctx.textAlign = 'center';
+      ctx.fillText('Spectral Embedding', ox + side / 2, 28);
+      ctx.fillStyle = '#7a8494'; ctx.font = '10px monospace';
+      ctx.fillText('v₂ (Fiedler)', ox + side / 2, oy + side + 16);
+      ctx.save(); ctx.translate(ox - 8, oy + side / 2); ctx.rotate(-Math.PI / 2);
+      ctx.fillText('v₃', 0, 0); ctx.restore();
+    }
+  }
+
+  // ═══ BUTTERFLY PLOT ═══
+  function renderButterflyView() {
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#0a0c10'; ctx.fillRect(0, 0, W, H);
+
+    if (!butterflyData) {
+      ctx.fillStyle = '#7a8494'; ctx.font = '13px monospace'; ctx.textAlign = 'center';
+      var msg = butterflyComputing ? 'Computing butterfly...' : 'Click "Compute Butterfly" in the sidebar';
+      ctx.fillText(msg, W / 2, H / 2);
+      if (!butterflyComputing && specV2) {
+        ctx.fillStyle = '#555'; ctx.font = '11px monospace';
+        ctx.fillText('CC: ' + specCCn + ' vertices. Set B_max and B Steps, then compute.', W / 2, H / 2 + 24);
+      }
+      return;
+    }
+
+    var Bvals = butterflyData.B, allEigs = butterflyData.eigenvalues;
+    var nB = Bvals.length, nEigs = allEigs[0].length;
+
+    var mg = { top: 55, right: 40, bottom: 55, left: 80 };
+    var pw = W - mg.left - mg.right, ph = H - mg.top - mg.bottom;
+
+    ctx.fillStyle = '#0a0c10'; ctx.fillRect(mg.left, mg.top, pw, ph);
+
+    var xmin = 0, xmax = Bvals[nB - 1];
+    var ymin = Infinity, ymax = -Infinity;
+    for (var i = 0; i < nB; i++)
+      for (var k = 0; k < nEigs; k++) {
+        if (allEigs[i][k] < ymin) ymin = allEigs[i][k];
+        if (allEigs[i][k] > ymax) ymax = allEigs[i][k];
+      }
+    var ypad = (ymax - ymin) * 0.05 || 0.5;
+    ymin -= ypad; ymax += ypad;
+
+    function mx(b) { return mg.left + (b - xmin) / (xmax - xmin) * pw; }
+    function my(v) { return mg.top + ph - (v - ymin) / (ymax - ymin) * ph; }
+
+    // Grid
+    ctx.strokeStyle = '#161a24'; ctx.lineWidth = 0.5;
+    for (var i = 0; i <= 6; i++) {
+      var yv = ymin + (ymax - ymin) * i / 6, sy = my(yv);
+      ctx.beginPath(); ctx.moveTo(mg.left, sy); ctx.lineTo(mg.left + pw, sy); ctx.stroke();
+    }
+    for (var i = 0; i <= 6; i++) {
+      var bv = xmin + (xmax - xmin) * i / 6, sx = mx(bv);
+      ctx.beginPath(); ctx.moveTo(sx, mg.top); ctx.lineTo(sx, mg.top + ph); ctx.stroke();
+    }
+
+    // Eigenvalue branches
+    ctx.lineWidth = Math.max(0.15, 0.4 - nEigs * 0.002);
+    ctx.strokeStyle = 'rgba(74,158,255,0.65)';
+    for (var k = 0; k < nEigs; k++) {
+      ctx.beginPath();
+      for (var i = 0; i < nB; i++) {
+        var sx = mx(Bvals[i]), sy = my(allEigs[i][k]);
+        if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+      }
+      ctx.stroke();
+    }
+
+    // Axes
+    ctx.strokeStyle = '#2a2f3a'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(mg.left, mg.top); ctx.lineTo(mg.left, mg.top + ph);
+    ctx.lineTo(mg.left + pw, mg.top + ph); ctx.stroke();
+
+    ctx.fillStyle = '#7a8494'; ctx.font = '10px monospace'; ctx.textAlign = 'right';
+    for (var i = 0; i <= 6; i++) {
+      var yv = ymin + (ymax - ymin) * i / 6;
+      ctx.fillText(yv.toFixed(1), mg.left - 6, my(yv) + 3);
+    }
+    ctx.textAlign = 'center';
+    for (var i = 0; i <= 6; i++) {
+      var bv = xmin + (xmax - xmin) * i / 6;
+      ctx.fillText(bv.toFixed(0), mx(bv), mg.top + ph + 16);
+    }
+
+    ctx.fillStyle = '#e2e6ee'; ctx.font = '12px monospace'; ctx.textAlign = 'center';
+    ctx.fillText('Magnetic Field Strength B', mg.left + pw / 2, mg.top + ph + 40);
+    ctx.save(); ctx.translate(18, mg.top + ph / 2); ctx.rotate(-Math.PI / 2);
+    ctx.fillText('Eigenvalue λ', 0, 0); ctx.restore();
+
+    ctx.fillStyle = '#f59e0b'; ctx.font = '14px monospace'; ctx.textAlign = 'center';
+    ctx.fillText('Hofstadter Butterfly on G(' + butterflyData.n + ', ' + butterflyData.p.toFixed(2) + ')', W / 2, 22);
+    ctx.fillStyle = '#7a8494'; ctx.font = '10px monospace';
+    ctx.fillText(nEigs + ' eigenvalue branches × ' + nB + ' B-steps  |  B ∈ [0, ' + xmax.toFixed(0) + ']', W / 2, 40);
+  }
+
+  // ═══ MAIN RENDER LOOP ═══
+  var renderPaused = false;
+  function render() {
+    requestAnimationFrame(render);
+    if (renderPaused) return;
+    switch (activeView) {
+      case 'graph': renderGraph(); break;
+      case 'spectrum': renderSpectrumView(); break;
+      case 'butterfly': renderButterflyView(); break;
+    }
+  }
+  render();
+
+  // ═══ EVENT HANDLERS ═══
+  btnGenerate.addEventListener('click', startGeneration);
+  btnButterfly.addEventListener('click', computeButterfly);
+  btnReset.addEventListener('click', function() {
+    camRotX = -0.3; camRotY = 0.5; camDist = 3.5; autoRotate = true;
+  });
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.target.classList.contains('val-input') && !isAnimating) startGeneration();
+  });
+  [inputN, inputP, inputSpeed, inputBmax, inputNB].forEach(function(el) {
+    el.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') { el.blur(); if (!isAnimating) startGeneration(); }
+    });
+  });
+})();
+</script>
+</body>
+</html>

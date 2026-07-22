@@ -1,9 +1,11 @@
 # Large data files (download from https://osf.io/f5rn6/)
 data/triplets_large_final_correctednc_correctedorder.csv
+object_images/
 
 # Pre-computed full graph (regenerate with precompute.py)
 output/full_graph.json
 output/full_graph.json.gz
+output/
 
 # macOS
 .DS_Store
