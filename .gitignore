@@ -21,3 +21,9 @@ __pycache__/
 # Environment
 .env
 .venv/
+
+# llm_judge runtime artifacts
+llm_judge/results/
+llm_judge/.venv*/
+.local-imajev/
+data/imdb_sbs/images/

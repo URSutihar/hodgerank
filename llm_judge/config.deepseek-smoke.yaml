@@ -1,0 +1,27 @@
+model:
+  provider: deepseek
+  name: deepseek-flash
+  host: https://api.deepseek.com
+  keychain_service: deepseek-anthropic
+  keychain_account: urs
+  temperature: 0.0
+  timeout_s: 90
+  max_retries: 3
+
+data:
+  gt_csv: data/imdb_sbs/gt.csv
+  crowd_csv: data/imdb_sbs/crowd_labels.csv
+  image_dir: data/imdb_sbs/images
+
+run:
+  n_pairs: 5
+  pair_source: human_judged
+  selection: random
+  stratify_by_gap: true
+  seed: 7
+  swap_repeat: true
+  save_every: 2
+  max_image_px: 512
+
+output:
+  dir: llm_judge/results/deepseek-smoke-2026-10-08

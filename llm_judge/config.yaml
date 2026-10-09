@@ -1,0 +1,76 @@
+# ── Qwen3-VL face-age judgement pipeline ────────────────────────────────────
+# Every path is relative to the repo root unless absolute.
+
+model:
+  # Ollama tag for Qwen3.8-27B (vision-capable, image-text-to-text).
+  #
+  #   24 GB VRAM guidance  — weights + ~0.9 GB vision projector + KV cache
+  #     qwen3.8:27b-q4        ~16.1 GB   FITS, recommended
+  #     qwen3.8:27b-mtp-q4    ~16.1 GB   FITS, multi-token prediction = faster decode
+  #     qwen3.8:27b-q8        ~29 GB     DOES NOT FIT in 24 GB (needs ~32 GB)
+  #     qwen3.8:27b-nvfp4     ~16 GB     FITS, Blackwell-class GPUs only
+  #   Smaller fallbacks if you want headroom or speed:
+  #     qwen3-vl:8b-instruct-q8  ~10 GB
+  #     qwen3-vl:8b-instruct-q4  ~6 GB
+  #
+  # Pull first:  ollama pull qwen3.8:27b-q4
+  name: "qwen3.8:27b-q4"
+  host: "http://localhost:11434"
+  temperature: 0.0          # deterministic judgements
+  seed: 42
+  timeout_s: 180
+  num_ctx: 4096
+  keep_alive: "10m"         # hold weights in VRAM between calls
+  max_retries: 3
+
+data:
+  gt_csv: "data/imdb_sbs/gt.csv"
+  crowd_csv: "data/imdb_sbs/crowd_labels.csv"
+  image_dir: "data/imdb_sbs/images"        # ~87 MB for all 9,150 images
+
+run:
+  # Which of the 250,249 human-judged pairs to send to the model.
+  n_pairs: 2000             # null / 0 = every pair (slow)
+  # Where pairs come from:
+  #   human_judged — only pairs humans already judged. Every row gets a human
+  #                  counterpart, so model-vs-human comparison is possible on
+  #                  all of them. But the human graph is triangle-poor, so
+  #                  curl/harmonic stay weakly estimated.
+  #   clique       — every pair among `clique_faces` faces. A complete graph,
+  #                  so C(K,3) triangles: K=70 gives 2,415 pairs and 54,740
+  #                  triangles for the same cost as ~71 triangles above.
+  #                  Only ~7% of those pairs were human-judged, so most rows
+  #                  have no human column. Use this to ask whether the MODEL
+  #                  is internally transitive.
+  pair_source: human_judged
+  clique_faces: 70          # only used when pair_source: human_judged
+  # A COMPLETE graph is contractible: H1 = 0, so harmonic comes out exactly 0
+  # for every judge including random noise. Dropping a fraction of the edges
+  # reopens the holes that carry harmonic, while keeping triangles plentiful.
+  # 1.0 keeps the complete graph: maximum triangles, best curl estimate, but
+  # harmonic is structurally 0 (analyze reports it as n/a rather than 0.00%).
+  # Below ~0.2 harmonic becomes measurable but triangles collapse.
+  clique_keep_frac: 1.0
+
+  # How to pick pairs (pair_source: human_judged only):
+  #   connected — snowball a dense subgraph so the pair set contains TRIANGLES.
+  #               Required for the Hodge curl/harmonic terms to mean anything.
+  #   random    — stratified random sample. Fine for plain accuracy, but yields
+  #               ~zero triangles, so Hodge degenerates to 100% gradient.
+  selection: connected
+  stratify_by_gap: true     # only used when selection: random
+  seed: 7
+
+  # Show each pair twice with left/right swapped. Doubles cost but measures
+  # the model's position bias, which is the VLM failure mode that most often
+  # masquerades as a real judgement.
+  swap_repeat: true
+
+  save_every: 25            # flush to disk every N judgements
+  max_image_px: 512         # downscale before sending; faces are ~250px anyway
+
+output:
+  dir: "llm_judge/results"
+  jsonl: "judgments.jsonl"       # append-only log — the authoritative record
+  parquet: "judgments.parquet"   # fast columnar snapshot
+  excel: "judgments.xlsx"        # human-readable snapshot, safe to open mid-run
