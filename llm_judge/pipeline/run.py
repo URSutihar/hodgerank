@@ -102,7 +102,7 @@ def run(cfg: Config, mock: bool = False, limit: int | None = None) -> JudgmentSt
 
         f1 = cfg.image_dir / first_img
         f2 = cfg.image_dir / second_img
-        if not f1.exists() or not f2.exists():
+        if not mock and (not f1.exists() or not f2.exists()):
             store.append(_record(cfg, p, task, None, None, None, None, quant,
                                  error=f"missing image: "
                                        f"{first_img if not f1.exists() else second_img}"))

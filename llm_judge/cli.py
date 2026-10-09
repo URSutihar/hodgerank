@@ -2,6 +2,7 @@
 """Qwen3.8-27B face-age judgement pipeline.
 
   python cli.py setup      check environment, Ollama, model, images
+  python cli.py data       download verified IMDB-WIKI-SbS CSV metadata
   python cli.py images     download the 9,150 face images (~87 MB)
   python cli.py pairs      build/inspect the pair list
   python cli.py run        run the judgements (resumable)
@@ -72,9 +73,18 @@ def cmd_setup(cfg: Config, args) -> None:
               f"python {HERE.name}/cli.py run --mock --limit 50)")
 
 
+def cmd_data(cfg: Config, args) -> None:
+    from pipeline.data import download_metadata
+    download_metadata(cfg)
+
+
 def cmd_images(cfg: Config, args) -> None:
+    if not cfg.gt_csv.exists() or not cfg.crowd_csv.exists():
+        cmd_data(cfg, args)
     from pipeline.images import download_all
-    download_all(cfg, workers=args.workers)
+    errors = download_all(cfg, workers=args.workers)
+    if errors:
+        raise SystemExit(1)
 
 
 def cmd_pairs(cfg: Config, args) -> None:
@@ -135,6 +145,8 @@ def main() -> None:
 
     sub.add_parser("setup", parents=[common],
                    help="check environment and prerequisites")
+    sub.add_parser("data", parents=[common],
+                   help="download and verify official IMDB-WIKI-SbS CSV metadata")
     p_img = sub.add_parser("images", parents=[common],
                            help="download face images (~136 MB)")
     p_img.add_argument("--workers", type=int, default=16)
@@ -158,7 +170,7 @@ def main() -> None:
     if out:
         cfg.out_dir = Path(out) if Path(out).is_absolute() else (REPO_ROOT / out)
         cfg.ensure_dirs()
-    {"setup": cmd_setup, "images": cmd_images, "pairs": cmd_pairs, "run": cmd_run,
+    {"setup": cmd_setup, "data": cmd_data, "images": cmd_images, "pairs": cmd_pairs, "run": cmd_run,
      "sync": cmd_sync, "analyze": cmd_analyze, "status": cmd_status}[args.cmd](cfg, args)
 
 

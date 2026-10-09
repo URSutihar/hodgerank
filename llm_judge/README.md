@@ -7,6 +7,49 @@ settled on earlier.
 
 Works on Linux, macOS and Windows.
 
+## Fresh-Machine Setup
+
+Clone the pipeline branch, then run these commands from the repository root:
+
+```bash
+git clone https://github.com/URSutihar/hodgerank.git
+cd hodgerank
+python3 -m venv .venv
+```
+
+Activate the environment: `source .venv/bin/activate` on macOS/Linux,
+or `.venv\Scripts\Activate.ps1` in Windows PowerShell. Then:
+
+```bash
+python -m pip install -r llm_judge/requirements.txt
+python llm_judge/cli.py data
+python llm_judge/cli.py images
+python llm_judge/cli.py pairs
+```
+
+`data` downloads `gt.csv` and `crowd_labels.csv` into `data/imdb_sbs/` from
+the [official IMDB-WIKI-SbS repository](https://github.com/Toloka/IMDB-WIKI-SbS).
+Downloads are pinned to revision `6087435b6eb61993c1169e232a827fd18b51a7c1`
+and checked against SHA-256 hashes. Metadata is about 70 MB; photos add
+about 136 MB. `images` automatically fetches missing metadata first.
+The data and photos are intentionally not bundled in Git.
+
+Configure a backend below, then run `setup`, `run`, and `analyze`. `setup`
+checks readiness; it does not install dependencies or download data. For an
+offline pipeline test after downloading metadata, use a separate mock output:
+
+```bash
+python llm_judge/cli.py run --mock --limit 10 --out llm_judge/results/mock-smoke
+```
+
+If downloads fail, rerun `data` or `images`. Metadata downloads are atomic
+and existing files are verified; incomplete files are not accepted. Existing
+nonempty images are skipped. A failed image download exits nonzero. For a
+checksum mismatch, preserve or move the existing file, then rerun `data`.
+Use YAML `data.gt_csv`, `data.crowd_csv`, and `data.image_dir` for alternate
+locations; paths are resolved relative to the repository root. Upstream URL
+availability and image rights are outside this repository's control.
+
 ## DeepSeek API smoke test (macOS)
 
 `config.deepseek-smoke.yaml` uses the image-capable `deepseek-flash` API and
@@ -19,6 +62,7 @@ Run from the repository root:
 
 ```bash
 python3 llm_judge/cli.py setup -c llm_judge/config.deepseek-smoke.yaml
+python3 llm_judge/cli.py images -c llm_judge/config.deepseek-smoke.yaml
 python3 llm_judge/cli.py run -c llm_judge/config.deepseek-smoke.yaml --limit 10
 python3 llm_judge/cli.py analyze -c llm_judge/config.deepseek-smoke.yaml
 ```

@@ -27,3 +27,5 @@ llm_judge/results/
 llm_judge/.venv*/
 .local-imajev/
 data/imdb_sbs/images/
+data/imdb_sbs/*.csv
+data/imdb_sbs/*.part
